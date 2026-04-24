@@ -74,7 +74,7 @@ const ensureColumns = async () => {
     await db.query(`
       CREATE TABLE IF NOT EXISTS collections (
         id TEXT PRIMARY KEY,
-        employee_id INTEGER REFERENCES users(id),
+        employee_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         bill_no TEXT NOT NULL,
         shop_name TEXT NOT NULL,
         amount DECIMAL NOT NULL,
