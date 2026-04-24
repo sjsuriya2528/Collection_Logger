@@ -54,19 +54,39 @@ transporter.verify((error, success) => {
   }
 });
 
-// Migration: Ensure necessary columns exist
+// Migration: Ensure necessary tables and columns exist
 const ensureColumns = async () => {
   try {
-    // Auth columns
-    await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_code TEXT');
-    await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expiry TIMESTAMP');
+    // Create Users table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'employee',
+        otp_code TEXT,
+        otp_expiry TIMESTAMP
+      )
+    `);
+
+    // Create Collections table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS collections (
+        id TEXT PRIMARY KEY,
+        employee_id INTEGER REFERENCES users(id),
+        bill_no TEXT NOT NULL,
+        shop_name TEXT NOT NULL,
+        amount DECIMAL NOT NULL,
+        payment_mode TEXT NOT NULL,
+        date TIMESTAMP NOT NULL,
+        status TEXT DEFAULT 'partial',
+        bill_proof TEXT,
+        payment_proof TEXT
+      )
+    `);
     
-    // Collection columns for new features
-    await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'partial\'');
-    await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS bill_proof TEXT');
-    await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS payment_proof TEXT');
-    
-    console.log('Database schema verified');
+    console.log('Database schema verified and tables created');
   } catch (err) {
     console.error('Migration Error:', err);
   }

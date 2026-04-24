@@ -5,7 +5,7 @@ import '../models/collection.dart';
 
 class ApiService {
   // Replace '192.168.1.XX' with your computer's actual local IP address
-  static const String baseUrl = 'http://10.129.178.227:3000/api'; 
+  static const String baseUrl = 'https://collectionlogger-production.up.railway.app/api'; 
 
   static Future<void> requestOTP(String email) async {
     final response = await http.post(
