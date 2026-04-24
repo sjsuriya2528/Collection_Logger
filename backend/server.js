@@ -369,7 +369,7 @@ app.get('/api/employees', authenticateToken, async (req, res) => {
       COALESCE(SUM(c.amount), 0) as today_total
       FROM users u
       LEFT JOIN collections c ON u.id = c.employee_id 
-      AND c.date::date = CURRENT_DATE
+      AND (c.date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
       WHERE u.role = 'employee'
       GROUP BY u.id, u.name
     `);
@@ -386,13 +386,13 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
       const todayTotal = await db.query(`
         SELECT COALESCE(SUM(amount), 0) as total 
         FROM collections 
-        WHERE date::date = CURRENT_DATE
+        WHERE (date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
       `);
       
       const modeBreakdown = await db.query(`
         SELECT payment_mode, SUM(amount) as total 
         FROM collections 
-        WHERE date::date = CURRENT_DATE
+        WHERE (date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
         GROUP BY payment_mode
       `);
       

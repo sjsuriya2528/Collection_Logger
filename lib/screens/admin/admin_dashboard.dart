@@ -44,7 +44,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/admin/dashboard'),
+        Uri.parse('${ApiService.baseUrl}/api/admin/dashboard'),
         headers: {'Authorization': 'Bearer ${auth.user!.token}'},
       );
       if (response.statusCode == 200) {

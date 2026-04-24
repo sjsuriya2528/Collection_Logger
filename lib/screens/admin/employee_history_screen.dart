@@ -241,101 +241,118 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       onLongPress: () => _showEditBottomSheet(coll),
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: Colors.white.withOpacity(0.05)),
         ),
-        child: Row(
+        child: Stack(
           children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.cyanAccent.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.receipt_long_rounded, color: Colors.cyanAccent),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  Row(
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.cyanAccent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.receipt_long_rounded, color: Colors.cyanAccent),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                coll['shop_name'], 
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                softWrap: true,
+                              ),
+                            ),
+                            if (coll['status'] == 'completed') ...[
+                              const SizedBox(width: 4),
+                              const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
+                            ],
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: coll['status'] == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                (coll['status'] ?? 'PARTIAL').toString().toUpperCase(),
+                                style: TextStyle(
+                                  color: coll['status'] == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Bill: ${coll['bill_no']} • ${DateFormat('dd MMM, hh:mm a').format(date)}',
+                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        ),
+                        if (coll['bill_proof'] != null || coll['payment_proof'] != null) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              if (coll['bill_proof'] != null)
+                                _buildProofChip('Bill Proof', coll['bill_proof']),
+                              if (coll['payment_proof'] != null)
+                                _buildProofChip('Payment Proof', coll['payment_proof']),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Flexible(
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
                         child: Text(
-                          coll['shop_name'], 
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                          softWrap: true,
+                          '₹${coll['amount']}',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
                         ),
                       ),
-                      if (coll['status'] == 'completed') ...[
-                        const SizedBox(width: 4),
-                        const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
-                      ],
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: coll['status'] == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          (coll['status'] ?? 'PARTIAL').toString().toUpperCase(),
-                          style: TextStyle(
-                            color: coll['status'] == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
-                            fontSize: 8,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      Text(
+                        coll['payment_mode'].toString().toUpperCase(),
+                        style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Bill: ${coll['bill_no']} • ${DateFormat('dd MMM, hh:mm a').format(date)}',
-                    style: const TextStyle(color: Colors.white60, fontSize: 12),
-                  ),
-                  if (coll['bill_proof'] != null || coll['payment_proof'] != null) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (coll['bill_proof'] != null)
-                          _buildProofChip('Bill Proof', coll['bill_proof']),
-                        if (coll['payment_proof'] != null)
-                          _buildProofChip('Payment Proof', coll['payment_proof']),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    '₹${coll['amount']}',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: () => _confirmDelete(coll),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withOpacity(0.1),
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(20),
+                      bottomLeft: Radius.circular(16),
+                    ),
                   ),
+                  child: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 16),
                 ),
-                Text(
-                  coll['payment_mode'].toString().toUpperCase(),
-                  style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                IconButton(
-                  onPressed: () => _confirmDelete(coll),
-                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
+              ),
             ),
           ],
         ),
