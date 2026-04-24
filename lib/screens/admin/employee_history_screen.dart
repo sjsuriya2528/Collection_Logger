@@ -362,7 +362,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
               final auth = Provider.of<AuthProvider>(context, listen: false);
               final success = await ApiService.deleteCollection(coll['id'], auth.user!.token!);
               if (success) {
-                _loadHistory(); // Refresh list
+                _fetchHistory(); // Refresh list
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Record deleted successfully')));
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete record'), backgroundColor: Colors.redAccent));

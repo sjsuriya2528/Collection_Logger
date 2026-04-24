@@ -111,8 +111,10 @@ const authenticateToken = (req, res, next) => {
 
 app.post('/api/auth/signup', async (req, res) => {
   const { name, email, password, role } = req.body;
+  console.log(`Signup attempt for email: ${email}`);
   try {
     const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
+    console.log(`Search result for ${email}: ${existing.rows.length} rows found`);
     if (existing.rows.length > 0) {
       return res.status(400).json({ message: 'Email already registered' });
     }

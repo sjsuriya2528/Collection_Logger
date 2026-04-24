@@ -211,6 +211,8 @@ class ApiService {
       print('Update Collection Error: $e');
       return false;
     }
+  }
+
   static Future<bool> deleteCollection(String collectionId, String token) async {
     try {
       final response = await http.delete(
