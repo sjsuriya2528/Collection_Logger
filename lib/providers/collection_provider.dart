@@ -65,6 +65,20 @@ class CollectionProvider with ChangeNotifier {
   Future<void> pullFromServer(String token, String employeeId) async {
     try {
       final serverData = await ApiService.getMyCollections(token);
+      final List<String> serverIds = serverData.map((d) => d['id'].toString()).toList();
+      
+      // 1. Get all local synced records
+      final localCollections = await DatabaseHelper.instance.getEmployeeCollections(employeeId);
+      
+      // 2. Identify records that are local but NOT on server (and were already synced)
+      for (var local in localCollections) {
+        if (local.isSynced && !serverIds.contains(local.id)) {
+          print('Cleanup: Record ${local.id} not found on server. Deleting locally...');
+          await DatabaseHelper.instance.deleteCollection(local.id);
+        }
+      }
+
+      // 3. Upsert server records into local DB
       for (var data in serverData) {
         final coll = Collection.fromMap({
           ...data,
@@ -72,6 +86,8 @@ class CollectionProvider with ChangeNotifier {
         });
         await DatabaseHelper.instance.insertCollection(coll);
       }
+      
+      // 4. Final UI update
       _collections = await DatabaseHelper.instance.getEmployeeCollections(employeeId);
       notifyListeners();
     } catch (e) {

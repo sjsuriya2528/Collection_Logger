@@ -328,10 +328,50 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                   coll['payment_mode'].toString().toUpperCase(),
                   style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
                 ),
+                const SizedBox(height: 8),
+                IconButton(
+                  onPressed: () => _confirmDelete(coll),
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _confirmDelete(dynamic coll) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('Delete Record', style: TextStyle(color: Colors.white)),
+        content: Text('Are you sure you want to delete the record for "${coll['shop_name']}"? This cannot be undone.', 
+          style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final auth = Provider.of<AuthProvider>(context, listen: false);
+              final success = await ApiService.deleteCollection(coll['id'], auth.user!.token!);
+              if (success) {
+                _loadHistory(); // Refresh list
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Record deleted successfully')));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete record'), backgroundColor: Colors.redAccent));
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('DELETE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }

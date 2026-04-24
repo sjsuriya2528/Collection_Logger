@@ -413,6 +413,20 @@ app.put('/api/collections/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete a collection record (Admin Only)
+app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+  
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM collections WHERE id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Record not found' });
+    res.json({ message: 'Record deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });

@@ -211,5 +211,16 @@ class ApiService {
       print('Update Collection Error: $e');
       return false;
     }
+  static Future<bool> deleteCollection(String collectionId, String token) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/collections/$collectionId'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Delete Collection Error: $e');
+      return false;
+    }
   }
 }
