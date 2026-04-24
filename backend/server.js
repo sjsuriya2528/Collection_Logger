@@ -29,6 +29,22 @@ const upload = multer({
 
 app.use(cors());
 app.use(express.json());
+
+// 5. ADD DEBUG LOGGING
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (req.method === 'POST') {
+    const bodyCopy = { ...req.body };
+    if (bodyCopy.password) bodyCopy.password = '******';
+    console.log('Body:', bodyCopy);
+  }
+  next();
+});
+
+// 1. VERIFY ROUTE DEFINITIONS (Health Checks)
+app.get('/', (req, res) => res.send('ACM Collection Logger Backend is running'));
+app.get('/api/auth/signup', (req, res) => res.send('Signup endpoint is alive. Use POST to register.'));
+
 app.use('/uploads', express.static('uploads'));
 
 const PORT = process.env.PORT || 3000;
@@ -57,6 +73,10 @@ transporter.verify((error, success) => {
 // Migration: Ensure necessary tables and columns exist
 const ensureColumns = async () => {
   try {
+    console.log('4. DATABASE CONNECTION CHECK: Connecting to PostgreSQL...');
+    const dbTest = await db.query('SELECT NOW()');
+    console.log('✅ Connected to DB at:', dbTest.rows[0].now);
+
     // Create Users table
     await db.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -129,9 +149,13 @@ app.post('/api/auth/signup', async (req, res) => {
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET);
     
     res.status(201).json({
-      user_id: user.id,
-      name: user.name,
-      role: user.role,
+      success: true,
+      message: "User created",
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role
+      },
       token: token
     });
   } catch (err) {

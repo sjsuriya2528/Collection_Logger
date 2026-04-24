@@ -152,7 +152,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                             const SnackBar(content: Text('Account created successfully!'), backgroundColor: Colors.greenAccent),
                                           );
                                         } else if (mounted) {
-                                          _showError(context, 'Registration failed. Email might be in use.');
+                                          _showError(context, authProvider.errorMessage ?? 'Registration failed');
                                         }
                                       }
                                     },

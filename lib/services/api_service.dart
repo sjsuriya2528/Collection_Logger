@@ -5,11 +5,11 @@ import '../models/collection.dart';
 
 class ApiService {
   // Replace '192.168.1.XX' with your computer's actual local IP address
-  static const String baseUrl = 'https://collectionlogger-production.up.railway.app/api'; 
+  static const String baseUrl = 'https://collectionlogger-production.up.railway.app'; 
 
   static Future<void> requestOTP(String email) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/forgot-password'),
+      Uri.parse('$baseUrl/api/auth/forgot-password'),
       body: jsonEncode({'email': email}),
       headers: {'Content-Type': 'application/json'},
     );
@@ -20,7 +20,7 @@ class ApiService {
 
   static Future<void> verifyOTP(String email, String otp) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/verify-otp'),
+      Uri.parse('$baseUrl/api/auth/verify-otp'),
       body: jsonEncode({'email': email, 'otp': otp}),
       headers: {'Content-Type': 'application/json'},
     );
@@ -31,7 +31,7 @@ class ApiService {
 
   static Future<void> resetPassword(String email, String otp, String newPassword) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/reset-password'),
+      Uri.parse('$baseUrl/api/auth/reset-password'),
       body: jsonEncode({'email': email, 'otp': otp, 'newPassword': newPassword}),
       headers: {'Content-Type': 'application/json'},
     );
@@ -41,7 +41,7 @@ class ApiService {
   }
 
   static Future<void> addCollection(Collection collection, String token) async {
-    final uri = Uri.parse('$baseUrl/collections');
+    final uri = Uri.parse('$baseUrl/api/collections');
     var request = http.MultipartRequest('POST', uri);
     
     request.headers['Authorization'] = 'Bearer $token';
@@ -72,7 +72,7 @@ class ApiService {
 
   static Future<void> requestChangeOTP(String token) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/request-change-otp'),
+      Uri.parse('$baseUrl/api/auth/request-change-otp'),
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
@@ -85,7 +85,7 @@ class ApiService {
 
   static Future<void> changePassword(String token, String otp, String newPassword) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/change-password'),
+      Uri.parse('$baseUrl/api/auth/change-password'),
       body: jsonEncode({'otp': otp, 'newPassword': newPassword}),
       headers: {
         'Content-Type': 'application/json',
@@ -100,7 +100,7 @@ class ApiService {
   static Future<Map<String, dynamic>> signup(String name, String email, String password, String role) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/signup'),
+        Uri.parse('$baseUrl/api/auth/signup'),
         body: jsonEncode({
           'name': name,
           'email': email,
@@ -124,7 +124,7 @@ class ApiService {
   static Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/login'),
+        Uri.parse('$baseUrl/api/auth/login'),
         body: jsonEncode({'email': email, 'password': password}),
         headers: {'Content-Type': 'application/json'},
       );
@@ -153,7 +153,7 @@ class ApiService {
 
   static Future<List<dynamic>> getEmployees(String token) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/employees'),
+      Uri.parse('$baseUrl/api/employees'),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode == 200) {
@@ -165,7 +165,7 @@ class ApiService {
   static Future<List<dynamic>> getMyCollections(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/collections/mine'),
+        Uri.parse('$baseUrl/api/collections/mine'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (response.statusCode == 200) {
@@ -182,7 +182,7 @@ class ApiService {
   static Future<List<dynamic>> getEmployeeCollections(String employeeId, String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/collections/employee/$employeeId'),
+        Uri.parse('$baseUrl/api/collections/employee/$employeeId'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (response.statusCode == 200) {
@@ -199,7 +199,7 @@ class ApiService {
   static Future<bool> updateCollection(String collectionId, Map<String, dynamic> updates, String token) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/collections/$collectionId'),
+        Uri.parse('$baseUrl/api/collections/$collectionId'),
         body: jsonEncode(updates),
         headers: {
           'Content-Type': 'application/json',
@@ -216,7 +216,7 @@ class ApiService {
   static Future<bool> deleteCollection(String collectionId, String token) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/collections/$collectionId'),
+        Uri.parse('$baseUrl/api/collections/$collectionId'),
         headers: {'Authorization': 'Bearer $token'},
       );
       return response.statusCode == 200;

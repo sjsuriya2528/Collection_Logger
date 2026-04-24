@@ -8,9 +8,11 @@ class AuthProvider with ChangeNotifier {
   User? _user;
   final _storage = const FlutterSecureStorage();
   bool _isLoading = false;
+  String? _errorMessage;
 
   User? get user => _user;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _user != null;
 
   AuthProvider() {
@@ -27,6 +29,7 @@ class AuthProvider with ChangeNotifier {
 
   Future<bool> login(String email, String password) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
@@ -38,6 +41,7 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -46,6 +50,7 @@ class AuthProvider with ChangeNotifier {
 
   Future<bool> signup(String name, String email, String password, String role) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
@@ -57,6 +62,7 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       _isLoading = false;
       notifyListeners();
       return false;
