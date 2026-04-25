@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/collection_provider.dart';
 import '../../models/collection.dart';
 import '../../services/api_service.dart';
@@ -12,7 +14,6 @@ class CollectionHistoryScreen extends StatefulWidget {
   @override
   State<CollectionHistoryScreen> createState() => _CollectionHistoryScreenState();
 }
-
 class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
@@ -20,6 +21,14 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   String _selectedStatusFilter = 'all';
   final _searchController = TextEditingController();
   String _searchQuery = "";
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, now.day);
+    _endDate = DateTime(now.year, now.month, now.day);
+  }
 
   void _applyQuickFilter(String type) {
     final now = DateTime.now();
@@ -76,6 +85,12 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
       return matchesDate && matchesMode && matchesSearch && matchesStatus;
     }).toList();
 
+    // Summary Calculations
+    final totalAmount = filteredCollections.fold(0.0, (sum, c) => sum + c.amount);
+    final cashTotal = filteredCollections.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.cash ? c.amount : (c.paymentMode == PaymentMode.both ? c.cashAmount : 0)));
+    final upiTotal = filteredCollections.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.upi ? c.amount : (c.paymentMode == PaymentMode.both ? c.upiAmount : 0)));
+    final chequeTotal = filteredCollections.where((c) => c.paymentMode == PaymentMode.cheque).fold(0.0, (s, c) => s + c.amount);
+
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
@@ -122,7 +137,11 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
               ),
             ),
           ),
-          if (_startDate != null || _selectedMode != 'all')
+          
+          // Summary Header
+          _buildSummaryHeader(totalAmount, cashTotal, upiTotal, chequeTotal),
+
+          if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all')
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Row(
@@ -131,14 +150,19 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${_selectedMode.toUpperCase()} • ${_startDate == null ? "All Time" : (_startDate == _endDate ? DateFormat('dd MMM').format(_startDate!) : "${DateFormat('dd MMM').format(_startDate!)} - ${DateFormat('dd MMM').format(_endDate!)}")}',
-                      style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                      '${_selectedMode.toUpperCase()} • ${_startDate == null ? "All Time" : (_startDate == _endDate ? DateFormat('dd MMM').format(_startDate!) : "${DateFormat('dd MMM').format(_startDate!)} - ${DateFormat('dd MMM').format(_endDate!)}")} • ${_selectedStatusFilter.toUpperCase()}',
+                      style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 11),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   GestureDetector(
-                    onTap: () => setState(() { _startDate = null; _endDate = null; _selectedMode = 'all'; }),
-                    child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+                    onTap: () => setState(() { 
+                      _startDate = null; 
+                      _endDate = null; 
+                      _selectedMode = 'all'; 
+                      _selectedStatusFilter = 'all';
+                    }),
+                    child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -357,97 +381,427 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   Widget _buildHistoryItem(Collection coll) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.cyanAccent.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.storefront_rounded, color: Colors.cyanAccent),
+      child: GestureDetector(
+        onLongPress: () => _showEditBottomSheet(coll),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.cyanAccent.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.storefront_rounded, color: Colors.cyanAccent),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        coll.shopName, 
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                        softWrap: true,
-                      ),
-                    ),
-                    if (coll.status == 'completed') ...[
-                      const SizedBox(width: 4),
-                      const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
-                    ],
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: coll.status == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        coll.status.toUpperCase(),
-                        style: TextStyle(
-                          color: coll.status == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            coll.shopName, 
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            softWrap: true,
+                          ),
                         ),
-                      ),
+                        if (coll.status == 'completed') ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
+                        ],
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: coll.status == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            coll.status.toUpperCase(),
+                            style: TextStyle(
+                              color: coll.status == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${coll.billNo} • ${DateFormat('dd MMM, hh:mm a').format(coll.date)}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    if (coll.billProof != null || coll.paymentProof != null) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (coll.billProof != null)
+                            _buildProofChip('Bill Proof', coll.billProof!),
+                          if (coll.paymentProof != null)
+                            _buildProofChip('Payment Proof', coll.paymentProof!),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${coll.billNo} • ${DateFormat('dd MMM, hh:mm a').format(coll.date)}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                if (coll.billProof != null || coll.paymentProof != null) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (coll.billProof != null)
-                        _buildProofChip('Bill Proof', coll.billProof!),
-                      if (coll.paymentProof != null)
-                        _buildProofChip('Payment Proof', coll.paymentProof!),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  '₹${coll.amount.toInt()}',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                coll.paymentMode.name.toUpperCase(),
-                style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '₹${coll.amount.toInt()}',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    coll.paymentMode.name.toUpperCase(),
+                    style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                  if (coll.paymentMode == PaymentMode.both) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Cash: ₹${coll.cashAmount.toInt()} | UPI: ₹${coll.upiAmount.toInt()}',
+                      style: const TextStyle(color: Colors.white38, fontSize: 9),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditBottomSheet(Collection coll) {
+    final billController = TextEditingController(text: coll.billNo);
+    final shopController = TextEditingController(text: coll.shopName);
+    final amountController = TextEditingController(text: coll.amount.toString());
+    final cashController = TextEditingController(text: coll.cashAmount.toString());
+    final upiController = TextEditingController(text: coll.upiAmount.toString());
+    String mode = coll.paymentMode.name;
+    String status = coll.status;
+    String? billProof = coll.billProof;
+    String? paymentProof = coll.paymentProof;
+    final picker = ImagePicker();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16213E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      builder: (context) {
+        bool isSaving = false;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> pickImg(bool isBill) async {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: const Color(0xFF1A1A2E),
+                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                builder: (context) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      leading: const Icon(Icons.photo_library_rounded, color: Colors.cyanAccent),
+                      title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        final picked = await picker.pickImage(
+                          source: ImageSource.gallery, 
+                          maxWidth: 800,
+                          maxHeight: 800,
+                          imageQuality: 30,
+                        );
+                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.camera_alt_rounded, color: Colors.cyanAccent),
+                      title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        final picked = await picker.pickImage(
+                          source: ImageSource.camera, 
+                          maxWidth: 800,
+                          maxHeight: 800,
+                          imageQuality: 30,
+                        );
+                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 24, left: 24, right: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+                    const SizedBox(height: 24),
+                    const Text('Edit Record', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text('Update your collection details', style: TextStyle(color: Colors.white38, fontSize: 14)),
+                    const SizedBox(height: 32),
+                    _buildStyledEditField(billController, 'Bill Number', Icons.receipt_long_rounded),
+                    const SizedBox(height: 16),
+                    _buildStyledEditField(shopController, 'Shop Name', Icons.storefront_rounded),
+                    const SizedBox(height: 16),
+                    _buildStyledEditField(amountController, 'Amount (₹)', Icons.currency_rupee_rounded, isNumber: true, isReadOnly: mode == 'both'),
+                    if (mode == 'both') ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(child: _buildStyledEditField(cashController, 'Cash portion', Icons.money, isNumber: true, onChanged: (v) {
+                            double c = double.tryParse(v) ?? 0;
+                            double u = double.tryParse(upiController.text) ?? 0;
+                            amountController.text = (c + u).toString();
+                          })),
+                          const SizedBox(width: 12),
+                          Expanded(child: _buildStyledEditField(upiController, 'UPI portion', Icons.account_balance_wallet, isNumber: true, onChanged: (v) {
+                            double u = double.tryParse(v) ?? 0;
+                            double c = double.tryParse(cashController.text) ?? 0;
+                            amountController.text = (c + u).toString();
+                          })),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    const Text('PAYMENT MODE', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: ['cash', 'upi', 'cheque', 'both'].map((m) {
+                        final isSelected = mode == m;
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () => setModalState(() {
+                              mode = m;
+                              if (m != 'upi' && m != 'both') paymentProof = null;
+                              if (m != 'both') {
+                                cashController.text = '0';
+                                upiController.text = '0';
+                              }
+                            }),
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? Colors.cyanAccent : Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  m.toUpperCase(),
+                                  style: TextStyle(color: isSelected ? const Color(0xFF1A1A2E) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text('PAYMENT STATUS', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: ['partial', 'completed'].map((s) {
+                        final isSelected = status == s;
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () => setModalState(() {
+                              status = s;
+                              if (s != 'completed') billProof = null;
+                            }),
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? (s == 'completed' ? Colors.greenAccent : Colors.orangeAccent) : Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  s.toUpperCase(),
+                                  style: TextStyle(color: isSelected ? const Color(0xFF1A1A2E) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 32),
+                    
+                    if (status == 'completed') ...[
+                      _buildEditProofButton(
+                        label: 'Completed Bill Screenshot',
+                        path: billProof,
+                        onTap: () => pickImg(true),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (mode == 'upi' || mode == 'both') ...[
+                      _buildEditProofButton(
+                        label: 'UPI Payment Screenshot',
+                        path: paymentProof,
+                        onTap: () => pickImg(false),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: isSaving ? null : () async {
+                          setModalState(() => isSaving = true);
+                          try {
+                            final auth = Provider.of<AuthProvider>(context, listen: false);
+                            final updatedData = await ApiService.updateCollection(
+                              coll.id,
+                              {
+                                'bill_no': billController.text,
+                                'shop_name': shopController.text,
+                                'amount': amountController.text,
+                                'payment_mode': mode,
+                                'status': status,
+                                'cash_amount': mode == 'both' ? cashController.text : (mode == 'cash' ? amountController.text : '0'),
+                                'upi_amount': mode == 'both' ? upiController.text : (mode == 'upi' ? amountController.text : '0'),
+                              },
+                              auth.user!.token!,
+                              billProofPath: billProof,
+                              paymentProofPath: paymentProof,
+                            );
+                            if (updatedData != null && mounted) {
+                              Navigator.pop(context);
+                              final updatedColl = Collection.fromMap({
+                                ...updatedData,
+                                'is_synced': 1
+                              });
+                              Provider.of<CollectionProvider>(context, listen: false).updateCollection(updatedColl);
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Changes saved successfully')));
+                            } else if (mounted) {
+                              setModalState(() => isSaving = false);
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save changes')));
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              setModalState(() => isSaving = false);
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.cyanAccent, 
+                          foregroundColor: const Color(0xFF1A1A2E), 
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          disabledBackgroundColor: Colors.cyanAccent.withOpacity(0.3),
+                        ),
+                        child: isSaving 
+                          ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Color(0xFF1A1A2E), strokeWidth: 2))
+                          : const Text('SAVE CHANGES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildStyledEditField(TextEditingController controller, String label, IconData icon, {bool isNumber = false, bool isReadOnly = false, Function(String)? onChanged}) {
+    return TextField(
+      controller: controller,
+      readOnly: isReadOnly,
+      onChanged: onChanged,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white60),
+        prefixIcon: Icon(icon, color: Colors.cyanAccent, size: 20),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.cyanAccent)),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.05),
+      ),
+    );
+  }
+
+  Widget _buildEditProofButton({required String label, String? path, required VoidCallback onTap}) {
+    final bool hasFile = path != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.1)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: hasFile ? Colors.green.withOpacity(0.1) : Colors.cyanAccent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                hasFile ? Icons.check_circle_rounded : Icons.add_a_photo_rounded,
+                color: hasFile ? Colors.greenAccent : Colors.cyanAccent,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(
+                    hasFile ? 'File selected' : 'Tap to upload screenshot',
+                    style: TextStyle(color: hasFile ? Colors.greenAccent : Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -517,6 +871,76 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                       ),
                     ),
                   ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryHeader(double total, double cash, double upi, double cheque) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.cyanAccent.withOpacity(0.1), Colors.blueAccent.withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Total Collection', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                    Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const Icon(Icons.account_balance_wallet_rounded, color: Colors.cyanAccent, size: 32),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _buildSummaryCard('Cash', cash, Colors.orangeAccent),
+              const SizedBox(width: 8),
+              _buildSummaryCard('UPI', upi, Colors.greenAccent),
+              const SizedBox(width: 8),
+              _buildSummaryCard('Cheque', cheque, Colors.purpleAccent),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(String label, double amount, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.05)),
+        ),
+        child: Column(
+          children: [
+            Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            FittedBox(
+              child: Text(
+                '₹${amount.toInt()}', 
+                style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)
+              ),
             ),
           ],
         ),

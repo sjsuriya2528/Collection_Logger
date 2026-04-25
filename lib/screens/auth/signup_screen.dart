@@ -13,6 +13,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _adminSecretController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   String _role = 'employee';
   bool _obscurePassword = true;
@@ -129,6 +130,22 @@ class _SignupScreenState extends State<SignupScreen> {
                             const SizedBox(height: 12),
                             _buildRoleSelector(),
                             
+                            if (_role == 'admin') ...[
+                              const SizedBox(height: 24),
+                              const Text(
+                                'ADMIN SECRET CODE',
+                                style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildTextField(
+                                controller: _adminSecretController,
+                                label: 'Secret Code',
+                                icon: Icons.vpn_key_outlined,
+                                isPassword: true,
+                                minLength: 3,
+                              ),
+                            ],
+                            
                             const SizedBox(height: 40),
                             
                             // Submit Button
@@ -145,6 +162,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                           _emailController.text.trim(),
                                           _passwordController.text.trim(),
                                           _role,
+                                          adminSecretCode: _role == 'admin' ? _adminSecretController.text.trim() : null,
                                         );
                                         if (success && mounted) {
                                           Navigator.pop(context);
@@ -253,6 +271,7 @@ class _SignupScreenState extends State<SignupScreen> {
     required IconData icon, 
     bool isPassword = false,
     TextInputType keyboardType = TextInputType.text,
+    int? minLength,
   }) {
     return TextFormField(
       controller: controller,
@@ -262,7 +281,8 @@ class _SignupScreenState extends State<SignupScreen> {
       validator: (value) {
         if (value == null || value.isEmpty) return 'Field required';
         if (label.contains('Email') && !value.contains('@')) return 'Invalid email';
-        if (isPassword && value.length < 6) return 'Min 6 characters';
+        final min = minLength ?? (isPassword ? 6 : 0);
+        if (value.length < min) return 'Min $min characters';
         return null;
       },
       decoration: InputDecoration(

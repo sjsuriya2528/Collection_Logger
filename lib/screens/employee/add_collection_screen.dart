@@ -18,6 +18,8 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
   final _billController = TextEditingController();
   final _shopController = TextEditingController();
   final _amountController = TextEditingController();
+  final _cashController = TextEditingController();
+  final _upiController = TextEditingController();
   PaymentMode _selectedMode = PaymentMode.cash;
   String _selectedStatus = 'partial';
   File? _billProof;
@@ -25,16 +27,48 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
   final _picker = ImagePicker();
 
   Future<void> _pickImage(bool isBill) async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
-    if (pickedFile != null) {
-      setState(() {
-        if (isBill) {
-          _billProof = File(pickedFile.path);
-        } else {
-          _paymentProof = File(pickedFile.path);
-        }
-      });
-    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.photo_library_rounded, color: Colors.cyanAccent),
+            title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
+            onTap: () async {
+              Navigator.pop(context);
+              final picked = await _picker.pickImage(
+                source: ImageSource.gallery, 
+                maxWidth: 800,
+                maxHeight: 800,
+                imageQuality: 30,
+              );
+              if (picked != null) setState(() { if (isBill) _billProof = File(picked.path); else _paymentProof = File(picked.path); });
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_rounded, color: Colors.cyanAccent),
+            title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
+            onTap: () async {
+              Navigator.pop(context);
+              final picked = await _picker.pickImage(
+                source: ImageSource.camera, 
+                maxWidth: 800,
+                maxHeight: 800,
+                imageQuality: 30,
+              );
+              if (picked != null) setState(() { if (isBill) _billProof = File(picked.path); else _paymentProof = File(picked.path); });
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
   }
 
   @override
@@ -83,6 +117,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                 label: 'Amount Collected (₹)',
                 icon: Icons.currency_rupee_rounded,
                 keyboardType: TextInputType.number,
+                isReadOnly: _selectedMode == PaymentMode.both,
               ),
               const SizedBox(height: 32),
               const Text(
@@ -99,6 +134,39 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
               const SizedBox(height: 12),
               _buildStatusSelector(),
               const SizedBox(height: 32),
+              if (_selectedMode == PaymentMode.both) ...[
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _cashController,
+                        label: 'Cash Portion (₹)',
+                        icon: Icons.money_rounded,
+                        keyboardType: TextInputType.number,
+                        onChanged: (val) => _updateTotalFromSplit(),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildTextField(
+                        controller: _upiController,
+                        label: 'UPI Portion (₹)',
+                        icon: Icons.account_balance_wallet_rounded,
+                        keyboardType: TextInputType.number,
+                        onChanged: (val) => _updateTotalFromSplit(),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '* Total amount will be auto-calculated',
+                  style: TextStyle(color: Colors.cyanAccent, fontSize: 11, fontStyle: FontStyle.italic),
+                ),
+              ],
+
+              const SizedBox(height: 32),
               
               // Conditional Proof Uploads
               if (_selectedStatus == 'completed') ...[
@@ -109,7 +177,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              if (_selectedMode == PaymentMode.upi) ...[
+              if (_selectedMode == PaymentMode.upi || _selectedMode == PaymentMode.both) ...[
                 _buildProofButton(
                   label: 'Upload UPI/GPay Screenshot',
                   file: _paymentProof,
@@ -130,7 +198,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please upload bill screenshot')));
                         return;
                       }
-                      if (_selectedMode == PaymentMode.upi && _paymentProof == null) {
+                      if ((_selectedMode == PaymentMode.upi || _selectedMode == PaymentMode.both) && _paymentProof == null) {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please upload payment screenshot')));
                         return;
                       }
@@ -139,12 +207,14 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                         employeeId: auth.user!.id,
                         billNo: _billController.text,
                         shopName: _shopController.text,
-                        amount: double.parse(_amountController.text),
+                        amount: double.parse(_amountController.text.isEmpty ? '0' : _amountController.text),
                         paymentMode: _selectedMode,
                         date: DateTime.now(),
                         status: _selectedStatus,
                         billProof: _billProof?.path,
                         paymentProof: _paymentProof?.path,
+                        cashAmount: _selectedMode == PaymentMode.both ? double.parse(_cashController.text.isEmpty ? '0' : _cashController.text) : (_selectedMode == PaymentMode.cash ? double.parse(_amountController.text.isEmpty ? '0' : _amountController.text) : 0),
+                        upiAmount: _selectedMode == PaymentMode.both ? double.parse(_upiController.text.isEmpty ? '0' : _upiController.text) : (_selectedMode == PaymentMode.upi ? double.parse(_amountController.text.isEmpty ? '0' : _amountController.text) : 0),
                       );
                       
                       await collProvider.addCollection(newColl, auth.user!.token);
@@ -218,6 +288,12 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     );
   }
 
+  void _updateTotalFromSplit() {
+    double cash = double.tryParse(_cashController.text) ?? 0;
+    double upi = double.tryParse(_upiController.text) ?? 0;
+    _amountController.text = (cash + upi).toString();
+  }
+
   Widget _buildProofButton({required String label, File? file, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
@@ -264,14 +340,18 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
   }
 
   Widget _buildTextField({
-    required TextEditingController controller, 
-    required String label, 
-    required IconData icon, 
-    TextInputType keyboardType = TextInputType.text
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    Function(String)? onChanged,
+    bool isReadOnly = false,
   }) {
     return TextFormField(
       controller: controller,
+      readOnly: isReadOnly,
       keyboardType: keyboardType,
+      onChanged: onChanged,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
@@ -298,10 +378,18 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
         final isSelected = _selectedMode == mode;
         return Expanded(
           child: GestureDetector(
-            onTap: () => setState(() => _selectedMode = mode),
+            onTap: () {
+              setState(() {
+                _selectedMode = mode;
+                if (mode != PaymentMode.both) {
+                  _cashController.clear();
+                  _upiController.clear();
+                }
+              });
+            },
             child: Container(
               margin: EdgeInsets.only(
-                right: mode == PaymentMode.cheque ? 0 : 8,
+                right: mode == PaymentMode.both ? 0 : 4,
               ),
               padding: const EdgeInsets.symmetric(vertical: 16),
               decoration: BoxDecoration(

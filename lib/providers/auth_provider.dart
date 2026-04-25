@@ -48,15 +48,13 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> signup(String name, String email, String password, String role) async {
+  Future<bool> signup(String name, String email, String password, String role, {String? adminSecretCode}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final response = await ApiService.signup(name, email, password, role);
-      _user = User.fromJson(response);
-      await _storage.write(key: 'user', value: jsonEncode(_user!.toJson()));
+      await ApiService.signup(name, email, password, role, adminSecretCode: adminSecretCode);
       
       _isLoading = false;
       notifyListeners();

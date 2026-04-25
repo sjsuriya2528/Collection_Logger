@@ -29,8 +29,8 @@ class CollectionProvider with ChangeNotifier {
             c.date.day == today.day);
     
     return {
-      'Cash': todayColls.where((c) => c.paymentMode == PaymentMode.cash).fold(0.0, (s, i) => s + i.amount),
-      'UPI': todayColls.where((c) => c.paymentMode == PaymentMode.upi).fold(0.0, (s, i) => s + i.amount),
+      'Cash': todayColls.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.cash ? c.amount : (c.paymentMode == PaymentMode.both ? c.cashAmount : 0))),
+      'UPI': todayColls.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.upi ? c.amount : (c.paymentMode == PaymentMode.both ? c.upiAmount : 0))),
       'Cheque': todayColls.where((c) => c.paymentMode == PaymentMode.cheque).fold(0.0, (s, i) => s + i.amount),
     };
   }
@@ -103,6 +103,15 @@ class CollectionProvider with ChangeNotifier {
     if (token != null) {
       // Background sync
       _syncOne(collection, token);
+    }
+  }
+
+  Future<void> updateCollection(Collection updated) async {
+    await DatabaseHelper.instance.insertCollection(updated);
+    final index = _collections.indexWhere((c) => c.id == updated.id);
+    if (index != -1) {
+      _collections[index] = updated;
+      notifyListeners();
     }
   }
 

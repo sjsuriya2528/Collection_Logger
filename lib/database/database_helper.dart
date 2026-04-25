@@ -20,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -39,11 +39,11 @@ class DatabaseHelper {
         is_synced INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'partial',
         bill_proof TEXT,
-        payment_proof TEXT
+        payment_proof TEXT,
+        cash_amount REAL DEFAULT 0,
+        upi_amount REAL DEFAULT 0
       )
     ''');
-    
-    // We could also store user info here, but for now we'll use secure storage for session
   }
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -51,6 +51,10 @@ class DatabaseHelper {
       await db.execute("ALTER TABLE collections ADD COLUMN status TEXT NOT NULL DEFAULT 'partial'");
       await db.execute("ALTER TABLE collections ADD COLUMN bill_proof TEXT");
       await db.execute("ALTER TABLE collections ADD COLUMN payment_proof TEXT");
+    }
+    if (oldVersion < 3) {
+      await db.execute("ALTER TABLE collections ADD COLUMN cash_amount REAL DEFAULT 0");
+      await db.execute("ALTER TABLE collections ADD COLUMN upi_amount REAL DEFAULT 0");
     }
   }
 

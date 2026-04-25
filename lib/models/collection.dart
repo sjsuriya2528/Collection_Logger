@@ -1,6 +1,6 @@
 import 'package:uuid/uuid.dart';
 
-enum PaymentMode { cash, upi, cheque }
+enum PaymentMode { cash, upi, cheque, both }
 
 class Collection {
   final String id;
@@ -14,6 +14,8 @@ class Collection {
   final String status; // 'partial' or 'completed'
   final String? billProof;
   final String? paymentProof;
+  final double cashAmount;
+  final double upiAmount;
 
   Collection({
     String? id,
@@ -27,6 +29,8 @@ class Collection {
     this.status = 'partial',
     this.billProof,
     this.paymentProof,
+    this.cashAmount = 0,
+    this.upiAmount = 0,
   }) : id = id ?? const Uuid().v4();
 
   factory Collection.fromMap(Map<String, dynamic> map) {
@@ -45,6 +49,8 @@ class Collection {
       status: map['status'] ?? 'partial',
       billProof: map['bill_proof'],
       paymentProof: map['payment_proof'],
+      cashAmount: double.parse((map['cash_amount'] ?? 0).toString()),
+      upiAmount: double.parse((map['upi_amount'] ?? 0).toString()),
     );
   }
 
@@ -61,6 +67,8 @@ class Collection {
       'status': status,
       'bill_proof': billProof,
       'payment_proof': paymentProof,
+      'cash_amount': cashAmount,
+      'upi_amount': upiAmount,
     };
   }
 

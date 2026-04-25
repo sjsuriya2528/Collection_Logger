@@ -1,9 +1,9 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Fallback to individual variables if DATABASE_URL is not provided
   user: process.env.DATABASE_URL ? undefined : process.env.DB_USER,
   host: process.env.DATABASE_URL ? undefined : process.env.DB_HOST,
   database: process.env.DATABASE_URL ? undefined : process.env.DB_NAME,

@@ -6,6 +6,7 @@ import '../models/collection.dart';
 class ApiService {
   // Replace '192.168.1.XX' with your computer's actual local IP address
   static const String baseUrl = 'https://collection.acmagencies.store'; 
+  // static const String baseUrl = 'http://192.168.1.18:3000'; 
 
   static Future<void> requestOTP(String email) async {
     final response = await http.post(
@@ -54,6 +55,8 @@ class ApiService {
     request.fields['payment_mode'] = collection.paymentMode.name;
     request.fields['date'] = collection.date.toIso8601String();
     request.fields['status'] = collection.status;
+    request.fields['cash_amount'] = collection.cashAmount.toString();
+    request.fields['upi_amount'] = collection.upiAmount.toString();
 
     // Add files if they exist (local paths)
     if (collection.billProof != null && !collection.billProof!.startsWith('http')) {
@@ -97,7 +100,7 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> signup(String name, String email, String password, String role) async {
+  static Future<Map<String, dynamic>> signup(String name, String email, String password, String role, {String? adminSecretCode}) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/auth/signup'),
@@ -105,7 +108,8 @@ class ApiService {
           'name': name,
           'email': email,
           'password': password,
-          'role': role
+          'role': role,
+          'admin_secret_code': adminSecretCode,
         }),
         headers: {'Content-Type': 'application/json'},
       );
@@ -196,20 +200,45 @@ class ApiService {
     }
   }
 
-  static Future<bool> updateCollection(String collectionId, Map<String, dynamic> updates, String token) async {
+  static Future<Map<String, dynamic>?> updateCollection(
+    String collectionId, 
+    Map<String, String> fields, 
+    String token,
+    {String? billProofPath, String? paymentProofPath}
+  ) async {
     try {
-      final response = await http.put(
-        Uri.parse('$baseUrl/api/collections/$collectionId'),
-        body: jsonEncode(updates),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token'
-        },
-      );
-      return response.statusCode == 200;
+      final request = http.MultipartRequest('PUT', Uri.parse('$baseUrl/api/collections/$collectionId'));
+      request.headers['Authorization'] = 'Bearer $token';
+      
+      // Add text fields
+      request.fields.addAll(fields);
+      
+      // Add files if provided, or preserve existing URLs
+      if (billProofPath != null) {
+        if (billProofPath.startsWith('http') || billProofPath.startsWith('/uploads')) {
+          request.fields['bill_proof'] = billProofPath;
+        } else {
+          request.files.add(await http.MultipartFile.fromPath('bill_proof', billProofPath));
+        }
+      }
+      
+      if (paymentProofPath != null) {
+        if (paymentProofPath.startsWith('http') || paymentProofPath.startsWith('/uploads')) {
+          request.fields['payment_proof'] = paymentProofPath;
+        } else {
+          request.files.add(await http.MultipartFile.fromPath('payment_proof', paymentProofPath));
+        }
+      }
+      
+      final response = await request.send();
+      if (response.statusCode == 200) {
+        final respStr = await response.stream.bytesToString();
+        return jsonDecode(respStr);
+      }
+      return null;
     } catch (e) {
       print('Update Collection Error: $e');
-      return false;
+      return null;
     }
   }
 
