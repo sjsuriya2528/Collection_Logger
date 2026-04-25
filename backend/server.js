@@ -443,8 +443,14 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
       
       const modeBreakdown = await db.query(`
         SELECT 
-          COALESCE(SUM(cash_amount), 0) as cash_total,
-          COALESCE(SUM(upi_amount), 0) as upi_total,
+          COALESCE(SUM(CASE 
+            WHEN payment_mode = 'cash' THEN amount 
+            WHEN payment_mode = 'both' THEN cash_amount 
+            ELSE 0 END), 0) as cash_total,
+          COALESCE(SUM(CASE 
+            WHEN payment_mode = 'upi' THEN amount 
+            WHEN payment_mode = 'both' THEN upi_amount 
+            ELSE 0 END), 0) as upi_total,
           COALESCE(SUM(CASE WHEN payment_mode = 'cheque' THEN amount ELSE 0 END), 0) as cheque_total
         FROM collections 
         WHERE (date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
