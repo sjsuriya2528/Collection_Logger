@@ -504,6 +504,26 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                               ],
                             ),
                           ],
+                          if (!isGroup) ...[
+                             const SizedBox(height: 12),
+                             Row(
+                               children: [
+                                 IconButton(
+                                   padding: EdgeInsets.zero,
+                                   constraints: const BoxConstraints(),
+                                   icon: const Icon(Icons.edit_rounded, size: 16, color: Colors.white38),
+                                   onPressed: () => _showEditBottomSheet(first),
+                                 ),
+                                 const SizedBox(width: 16),
+                                 IconButton(
+                                   padding: EdgeInsets.zero,
+                                   constraints: const BoxConstraints(),
+                                   icon: Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent.withOpacity(0.7)),
+                                   onPressed: () => _showDeleteConfirmation(first),
+                                 ),
+                               ],
+                             ),
+                          ],
                         ],
                       ),
                     ),
@@ -519,28 +539,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                             isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
                             color: Colors.cyanAccent,
                             size: 20,
-                          )
-                        else ...[
-                           const SizedBox(height: 8),
-                           Row(
-                             mainAxisSize: MainAxisSize.min,
-                             children: [
-                               IconButton(
-                                 padding: EdgeInsets.zero,
-                                 constraints: const BoxConstraints(),
-                                 icon: const Icon(Icons.edit_rounded, size: 16, color: Colors.white38),
-                                 onPressed: () => _showEditBottomSheet(first),
-                               ),
-                               const SizedBox(width: 12),
-                               IconButton(
-                                 padding: EdgeInsets.zero,
-                                 constraints: const BoxConstraints(),
-                                 icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent.withOpacity(0.7)),
-                                 onPressed: () => _showDeleteConfirmation(first),
-                               ),
-                             ],
-                           ),
-                        ],
+                          ),
                       ],
                     ),
                   ],
