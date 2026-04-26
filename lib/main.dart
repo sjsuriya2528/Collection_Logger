@@ -6,9 +6,17 @@ import 'screens/auth/login_screen.dart';
 import 'screens/employee/employee_dashboard.dart';
 import 'screens/admin/admin_dashboard.dart';
 import 'services/sync_service.dart';
+import 'services/notification_service.dart';
+import 'package:firebase_core/firebase_core.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+    await NotificationService.initialize();
+  } catch (e) {
+    print('Firebase initialization failed: $e');
+  }
   runApp(
     MultiProvider(
       providers: [
@@ -67,6 +75,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
       
       if (authProvider.user!.isAdmin) {
+        NotificationService.registerDeviceToken();
         return const AdminDashboard();
       } else {
         return const EmployeeDashboard();
