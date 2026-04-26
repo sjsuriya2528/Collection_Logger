@@ -465,9 +465,14 @@ app.post('/api/collections', authenticateToken, upload.fields([
       [id, req.user.id, bill_no, shop_name, amount, payment_mode, date, status, billProofUrl, paymentProofUrl, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), group_id]
     );
 
+    if (!req.user.name) {
+      const userRes = await db.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+      if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
+    }
+
     sendAdminNotification(
       'New Collection Added',
-      `${req.user.name} added Bill #${bill_no} for ${shop_name} (₹${amount})`
+      `${req.user.name || 'An employee'} added Bill #${bill_no} for ${shop_name} (₹${amount})`
     );
 
     res.status(201).json({ message: 'Collection synced', bill_proof: billProofUrl, payment_proof: paymentProofUrl });
