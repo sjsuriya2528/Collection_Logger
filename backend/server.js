@@ -469,17 +469,33 @@ app.get('/api/collections/mine', authenticateToken, async (req, res) => {
 });
 
 // ADMIN DASHBOARD
+const getISTRange = () => {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const nowIST = new Date(now.getTime() + istOffset);
+  
+  const startIST = new Date(nowIST.setUTCHours(0, 0, 0, 0));
+  const endIST = new Date(nowIST.setUTCHours(23, 59, 59, 999));
+  
+  return {
+    start: new Date(startIST.getTime() - istOffset),
+    end: new Date(endIST.getTime() - istOffset)
+  };
+};
+
 app.get('/api/employees', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
   try {
+    const range = getISTRange();
     const result = await db.query(`
       SELECT u.id as user_id, u.name, COALESCE(SUM(c.amount), 0) as today_total
       FROM users u
       LEFT JOIN collections c ON u.id = c.employee_id 
-        AND (c.date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
+        AND c.date >= $1 AND c.date <= $2
       WHERE u.role = 'employee'
       GROUP BY u.id, u.name
-    `);
+    `, [range.start.toISOString(), range.end.toISOString()]);
+    
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -489,19 +505,20 @@ app.get('/api/employees', authenticateToken, async (req, res) => {
 app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
     try {
-      const todayTotal = await db.query(`
-        SELECT COALESCE(SUM(amount), 0) as total 
-        FROM collections 
-        WHERE (date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
-      `);
+      const range = getISTRange();
+      const s = range.start.toISOString();
+      const e = range.end.toISOString();
+
+      const todayTotal = await db.query('SELECT COALESCE(SUM(amount), 0) as total FROM collections WHERE date >= $1 AND date <= $2', [s, e]);
       const modeBreakdown = await db.query(`
         SELECT 
           COALESCE(SUM(CASE WHEN payment_mode = 'cash' THEN amount WHEN payment_mode = 'both' THEN cash_amount ELSE 0 END), 0) as cash_total,
           COALESCE(SUM(CASE WHEN payment_mode = 'upi' THEN amount WHEN payment_mode = 'both' THEN upi_amount ELSE 0 END), 0) as upi_total,
           COALESCE(SUM(CASE WHEN payment_mode = 'cheque' THEN amount ELSE 0 END), 0) as cheque_total
         FROM collections 
-        WHERE (date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
-      `);
+        WHERE date >= $1 AND date <= $2
+      `, [s, e]);
+
       res.json({
         today_total: todayTotal.rows[0].total,
         breakdown: [
