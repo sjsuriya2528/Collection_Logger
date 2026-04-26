@@ -376,10 +376,10 @@ app.post('/api/collections', authenticateToken, upload.fields([
   let paymentProofUrl = null;
 
   if (req.files && req.files['billProof']) {
-    billProofUrl = await uploadToCloudinary(req.files['billProof'][0].path);
+    billProofUrl = await uploadToCloudinary(req.files['billProof'][0].path, 'bills');
   }
   if (req.files && req.files['paymentProof']) {
-    paymentProofUrl = await uploadToCloudinary(req.files['paymentProof'][0].path);
+    paymentProofUrl = await uploadToCloudinary(req.files['paymentProof'][0].path, 'payments');
   }
 
   try {
@@ -527,10 +527,10 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
     let paymentProofUrl = req.body.payment_proof !== undefined ? req.body.payment_proof : ownerCheck.rows[0].payment_proof;
 
     if (req.files['bill_proof']) {
-      billProofUrl = await uploadToCloudinary(req.files['bill_proof'][0].path);
+      billProofUrl = await uploadToCloudinary(req.files['bill_proof'][0].path, 'bills');
     }
     if (req.files['payment_proof']) {
-      paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path);
+      paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path, 'payments');
     }
 
     // NEW: Auto-clear proofs if status/mode no longer requires them
