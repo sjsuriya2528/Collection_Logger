@@ -546,11 +546,18 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
         LIMIT 1
       `);
 
-      const latestUpdate = await db.query(`
-        SELECT * FROM system_updates 
-        ORDER BY created_at DESC 
-        LIMIT 1
-      `);
+      // Safely fetch latest event (Don't crash if table doesn't exist yet)
+      let latestEvent = null;
+      try {
+        const latestUpdate = await db.query(`
+          SELECT * FROM system_updates 
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `);
+        if (latestUpdate.rows.length > 0) latestEvent = latestUpdate.rows[0];
+      } catch (e) {
+        console.warn('System updates table not ready yet');
+      }
 
       res.json({
         today_total: todayTotal.rows[0].total,
@@ -559,7 +566,7 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
           { payment_mode: 'upi', total: modeBreakdown.rows[0].upi_total },
           { payment_mode: 'cheque', total: modeBreakdown.rows[0].cheque_total }
         ],
-        latest_event: latestUpdate.rows.length > 0 ? latestUpdate.rows[0] : null
+        latest_event: latestEvent
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
