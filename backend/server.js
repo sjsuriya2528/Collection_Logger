@@ -37,6 +37,28 @@ const uploadToCloudinary = async (filePath, folder = 'collections') => {
   }
 };
 
+// Cloudinary Delete Helper
+const deleteCloudinaryFile = async (url) => {
+  if (!url || !url.includes('cloudinary.com')) {
+    // Handle local file cleanup if necessary
+    if (url && url.startsWith('/uploads/')) {
+      const localPath = path.join(__dirname, url);
+      if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+    }
+    return;
+  }
+  try {
+    const parts = url.split('/');
+    const lastPart = parts.pop(); 
+    const folder = parts.pop(); 
+    const publicId = `${folder}/${lastPart.split('.')[0]}`;
+    await cloudinary.uploader.destroy(publicId);
+    console.log(`Cloudinary file deleted: ${publicId}`);
+  } catch (err) {
+    console.error('Cloudinary Delete Error:', err);
+  }
+};
+
 // Multer Config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -541,7 +563,24 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
     }
     const result = await db.query('DELETE FROM collections WHERE id = $1 RETURNING *', [id]);
     if (result.rows.length === 0) return res.status(404).json({ message: 'Record not found' });
-    res.json({ message: 'Record deleted successfully' });
+    
+    const deletedRecord = result.rows[0];
+
+    // Cleanup proofs if not used by others
+    if (deletedRecord.bill_proof) {
+      const count = await db.query('SELECT count(*) FROM collections WHERE bill_proof = $1', [deletedRecord.bill_proof]);
+      if (parseInt(count.rows[0].count) === 0) {
+        await deleteCloudinaryFile(deletedRecord.bill_proof);
+      }
+    }
+    if (deletedRecord.payment_proof) {
+      const count = await db.query('SELECT count(*) FROM collections WHERE payment_proof = $1', [deletedRecord.payment_proof]);
+      if (parseInt(count.rows[0].count) === 0) {
+        await deleteCloudinaryFile(deletedRecord.payment_proof);
+      }
+    }
+
+    res.json({ message: 'Record and associated unique proofs deleted successfully' });
   } catch (err) {
     console.error('Delete Error:', err);
     res.status(500).json({ error: err.message });
