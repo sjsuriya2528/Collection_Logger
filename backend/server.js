@@ -282,7 +282,7 @@ app.post('/api/auth/signup', async (req, res) => {
     );
     
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET);
+    const token = jwt.sign({ id: user.id, name: user.name, role: role }, JWT_SECRET);
     
     res.status(201).json({
       success: true,
@@ -306,7 +306,7 @@ app.post('/api/auth/login', async (req, res) => {
     const user = result.rows[0];
 
     if (user && await bcrypt.compare(password, user.password_hash)) {
-      const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET);
+      const token = jwt.sign({ id: user.id, name: user.name, role: user.role }, JWT_SECRET);
       res.json({
         user_id: user.id,
         name: user.name,

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/collection_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/notification_service.dart';
 import 'employee_history_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -24,6 +25,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
+    // Register token for notifications
+    // Register token for notifications
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (authProvider.user?.token != null) {
+      NotificationService.registerDeviceToken(authProvider.user!.token!);
+    }
     _refreshAll();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _fetchEmployees();

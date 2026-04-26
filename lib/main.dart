@@ -88,9 +88,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
       
       if (authProvider.user!.isAdmin) {
-        if (Platform.isAndroid || Platform.isIOS) {
-          NotificationService.registerDeviceToken();
-        }
         return const AdminDashboard();
       } else {
         return const EmployeeDashboard();

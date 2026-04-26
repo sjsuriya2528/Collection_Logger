@@ -2,16 +2,17 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../services/api_service.dart';
 
 class NotificationService {
-  static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
   static Future<void> initialize() async {
+    final messaging = FirebaseMessaging.instance;
     // 1. Request Permission
-    NotificationSettings settings = await _messaging.requestPermission(
+    NotificationSettings settings = await messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
@@ -59,17 +60,24 @@ class NotificationService {
     );
   }
 
-  static Future<void> registerDeviceToken() async {
+  static Future<void> registerDeviceToken(String userToken) async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      print('DEBUG: Skipping FCM registration on this platform.');
+      return;
+    }
+
     try {
-      String? token = await _messaging.getToken();
-      if (token == null) return;
+      print('DEBUG: Starting FCM token registration...');
+      final messaging = FirebaseMessaging.instance;
+      String? token = await messaging.getToken();
+      print('DEBUG: FCM Token retrieved: $token');
+      if (token == null) {
+        print('DEBUG: Token is NULL, skipping registration');
+        return;
+      }
 
-      print('FCM Token: $token');
 
-      final prefs = await SharedPreferences.getInstance();
-      final userToken = prefs.getString('token');
-      if (userToken == null) return;
-
+      print('DEBUG: Sending token to server: ${ApiService.baseUrl}/api/auth/register-fcm-token');
       final response = await http.post(
         Uri.parse('${ApiService.baseUrl}/api/auth/register-fcm-token'),
         headers: {
@@ -79,6 +87,7 @@ class NotificationService {
         body: jsonEncode({'token': token}),
       );
 
+      print('DEBUG: Server response: ${response.statusCode} - ${response.body}');
       if (response.statusCode == 200) {
         print('Device token registered successfully');
       }
