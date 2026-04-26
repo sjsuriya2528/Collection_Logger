@@ -8,9 +8,17 @@ import 'screens/admin/admin_dashboard.dart';
 import 'services/sync_service.dart';
 import 'services/notification_service.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'dart:io';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows || Platform.isLinux) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
   try {
     await Firebase.initializeApp();
     await NotificationService.initialize();

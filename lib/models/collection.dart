@@ -36,7 +36,12 @@ class Collection {
   }) : id = id ?? const Uuid().v4();
 
   factory Collection.fromMap(Map<String, dynamic> map) {
-    DateTime parsedDate = DateTime.parse(map['date'].toString()).toLocal();
+    String dateStr = map['date'].toString();
+    // If the string doesn't have a timezone suffix, assume it was stored as UTC
+    if (!dateStr.contains('Z') && !dateStr.contains('+')) {
+      dateStr += 'Z';
+    }
+    DateTime parsedDate = DateTime.parse(dateStr).toLocal();
 
     return Collection(
       id: map['id'],
@@ -67,7 +72,7 @@ class Collection {
       'shop_name': shopName,
       'amount': amount,
       'payment_mode': paymentMode.name,
-      'date': date.toIso8601String(),
+      'date': date.toUtc().toIso8601String(),
       'is_synced': isSynced ? 1 : 0,
       'status': status,
       'bill_proof': billProof,
@@ -87,7 +92,7 @@ class Collection {
       'shop_name': shopName,
       'amount': amount,
       'payment_mode': paymentMode.name,
-      'date': date.toIso8601String(),
+      'date': date.toUtc().toIso8601String(),
       'group_id': groupId,
     };
   }

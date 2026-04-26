@@ -357,6 +357,7 @@ app.post('/api/auth/register-fcm-token', authenticateToken, async (req, res) => 
       'INSERT INTO fcm_tokens (user_id, token) VALUES ($1, $2) ON CONFLICT (token) DO UPDATE SET user_id = $1',
       [req.user.id, token]
     );
+    console.log(`[FCM] Registered token for user ${req.user.id}`);
     res.json({ message: 'Token registered' });
   } catch (err) {
     res.status(500).json({ error: err.message });
