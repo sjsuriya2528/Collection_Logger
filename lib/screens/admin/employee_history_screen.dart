@@ -28,6 +28,14 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
   String _searchQuery = "";
   final Set<String> _expandedGroups = {};
 
+  DateTime _parseDate(dynamic date) {
+    String dateStr = date.toString();
+    if (!dateStr.contains('Z') && !dateStr.contains('+')) {
+      dateStr += 'Z';
+    }
+    return DateTime.parse(dateStr).toLocal();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -74,7 +82,11 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       // Date Filter
       bool matchesDate = true;
       if (_startDate != null && _endDate != null) {
-        final rawDate = DateTime.parse(c['date'].toString());
+        String dateStr = c['date'].toString();
+        if (!dateStr.contains('Z') && !dateStr.contains('+')) {
+          dateStr += 'Z';
+        }
+        final rawDate = DateTime.parse(dateStr);
         final localDate = rawDate.toLocal();
         final d = DateTime(localDate.year, localDate.month, localDate.day);
         matchesDate = d.isAfter(_startDate!.subtract(const Duration(days: 1))) && 
@@ -249,8 +261,13 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                             }
                             final groupIds = grouped.keys.toList();
                             groupIds.sort((a, b) {
-                              final dateA = DateTime.parse(grouped[a]!.first['date']);
-                              final dateB = DateTime.parse(grouped[b]!.first['date']);
+                              String dateAStr = grouped[a]!.first['date'].toString();
+                              String dateBStr = grouped[b]!.first['date'].toString();
+                              if (!dateAStr.contains('Z') && !dateAStr.contains('+')) dateAStr += 'Z';
+                              if (!dateBStr.contains('Z') && !dateBStr.contains('+')) dateBStr += 'Z';
+                              
+                              final dateA = DateTime.parse(dateAStr);
+                              final dateB = DateTime.parse(dateBStr);
                               return dateB.compareTo(dateA);
                             });
 
@@ -360,8 +377,8 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                           const SizedBox(height: 2),
                           Text(
                             isGroup 
-                              ? '${items.length} Bills • ${DateFormat('dd MMM, hh:mm a').format(DateTime.parse(first['date']))}'
-                              : '${first['bill_no']} • ${DateFormat('dd MMM, hh:mm a').format(DateTime.parse(first['date']))}',
+                              ? '${items.length} Bills • ${DateFormat('dd MMM, hh:mm a').format(_parseDate(first['date']))}'
+                              : '${first['bill_no']} • ${DateFormat('dd MMM, hh:mm a').format(_parseDate(first['date']))}',
                             style: const TextStyle(color: Colors.white60, fontSize: 12),
                           ),
                           if (sharedPaymentProof != null) ...[
