@@ -475,6 +475,11 @@ app.post('/api/collections', authenticateToken, upload.fields([
       `${req.user.name || 'An employee'} added Bill #${bill_no} for ${shop_name} (₹${amount})`
     );
 
+    await db.query(
+      'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
+      ['add', req.user.name || 'An employee', `Bill #${bill_no} for ${shop_name} (₹${amount})`]
+    );
+
     res.status(201).json({ message: 'Collection synced', bill_proof: billProofUrl, payment_proof: paymentProofUrl });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -528,13 +533,29 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
         WHERE date::date = CURRENT_DATE
       `);
 
+      const latestCollection = await db.query(`
+        SELECT c.*, u.name as employee_name
+        FROM collections c
+        JOIN users u ON c.employee_id = u.id
+        WHERE c.date::date = CURRENT_DATE
+        ORDER BY c.date DESC
+        LIMIT 1
+      `);
+
+      const latestUpdate = await db.query(`
+        SELECT * FROM system_updates 
+        ORDER BY created_at DESC 
+        LIMIT 1
+      `);
+
       res.json({
         today_total: todayTotal.rows[0].total,
         breakdown: [
           { payment_mode: 'cash', total: modeBreakdown.rows[0].cash_total },
           { payment_mode: 'upi', total: modeBreakdown.rows[0].upi_total },
           { payment_mode: 'cheque', total: modeBreakdown.rows[0].cheque_total }
-        ]
+        ],
+        latest_event: latestUpdate.rows.length > 0 ? latestUpdate.rows[0] : null
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -583,6 +604,12 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
     }
 
     sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated Bill #${bill_no} for ${shop_name}`);
+    
+    await db.query(
+      'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
+      ['edit', req.user.name || 'An employee', `Bill #${bill_no} for ${shop_name}`]
+    );
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -617,6 +644,11 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
     sendAdminNotification(
       'Collection Deleted', 
       `${req.user.name || 'An employee'} deleted Bill #${deletedRecord.bill_no} for ${deletedRecord.shop_name}`
+    );
+
+    await db.query(
+      'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
+      ['delete', req.user.name || 'An employee', `Bill #${deletedRecord.bill_no} for ${deletedRecord.shop_name}`]
     );
 
     res.json({ message: 'Deleted successfully' });

@@ -23,7 +23,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Map<String, dynamic> _summary = {'today_total': 0, 'breakdown': []};
   bool _isLoading = false;
   Timer? _refreshTimer;
-  double _lastTotal = 0;
+  int? _lastEventId;
 
   @override
   void initState() {
@@ -35,7 +35,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       NotificationService.registerDeviceToken(authProvider.user!.token!);
     }
     _refreshAll();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       _fetchEmployees();
     });
   }
@@ -64,33 +64,54 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final emps = await ApiService.getEmployees(auth.user!.token!);
 
       if (mounted) {
-        final newTotal = double.tryParse(summary['today_total']?.toString() ?? '0') ?? 0;
+      if (mounted) {
+        final latestEvent = summary['latest_event'];
         
-        // Notify if total increased (New Collection)
-        if (_lastTotal > 0 && newTotal > _lastTotal && Platform.isWindows) {
-          _showWindowsNotification(newTotal - _lastTotal);
+        if (latestEvent != null) {
+          final eventId = int.tryParse(latestEvent['id']?.toString() ?? '0') ?? 0;
+          
+          // Notify if it's a NEW event we haven't seen yet
+          if (_lastEventId != null && eventId > _lastEventId!) {
+            _showEventNotification(latestEvent);
+          }
+          
+          setState(() {
+            _summary = summary;
+            _employees = emps;
+            _lastEventId = eventId;
+          });
+        } else {
+          setState(() {
+            _summary = summary;
+            _employees = emps;
+          });
         }
-
-        setState(() {
-          _summary = summary;
-          _employees = emps;
-          _lastTotal = newTotal;
-        });
       }
     } catch (e) {
       print('Dashboard Refresh Error: $e');
     }
   }
 
-  void _showWindowsNotification(double increase) {
-    LocalNotification notification = LocalNotification(
-      title: "New Collection Received",
-      body: "A new payment of ₹${increase.toInt()} has been added.",
-      actions: [
-        LocalNotificationAction(text: "View Dashboard"),
-      ],
-    );
-    notification.show();
+  void _showEventNotification(Map<String, dynamic> event) {
+    final type = event['action_type']; // 'add', 'edit', 'delete'
+    final name = event['employee_name'];
+    final details = event['details'];
+    
+    String title = "New Update Received";
+    if (type == 'add') title = "New Collection Added";
+    if (type == 'edit') title = "Collection Edited";
+    if (type == 'delete') title = "Collection Deleted";
+
+    if (Platform.isWindows) {
+      LocalNotification notification = LocalNotification(
+        title: title,
+        body: "$name: $details",
+        actions: [
+          LocalNotificationAction(text: "View Dashboard"),
+        ],
+      );
+      notification.show();
+    }
   }
 
   Future<void> _fetchDashboardSummary() async {
