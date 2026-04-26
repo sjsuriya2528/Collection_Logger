@@ -64,7 +64,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final emps = await ApiService.getEmployees(auth.user!.token!);
 
       if (mounted) {
-      if (mounted) {
         final latestEvent = summary['latest_event'];
         
         if (latestEvent != null) {

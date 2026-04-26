@@ -171,7 +171,11 @@ const transporter = nodemailer.createTransport({
   },
   tls: {
     rejectUnauthorized: false // Helps with some cloud hosting certificate issues
-  }
+  },
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
+  dnsV6Order: false // Forces IPv4 if IPv6 is failing
 });
 
 // Verify Transporter
