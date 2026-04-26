@@ -600,41 +600,61 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              title: Text(title, style: const TextStyle(color: Colors.white)),
-              leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-            ),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.network(
-                imageUrl,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return const Padding(
-                    padding: EdgeInsets.all(40.0),
-                    child: CircularProgressIndicator(color: Colors.cyanAccent),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) => Container(
-                  padding: const EdgeInsets.all(40),
-                  color: Colors.white.withOpacity(0.05),
-                  child: const Column(
-                    children: [
-                      Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 40),
-                      SizedBox(height: 8),
-                      Text('Failed to load image', style: TextStyle(color: Colors.white60)),
-                    ],
+        backgroundColor: const Color(0xFF1A1A2E),
+        insetPadding: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.8,
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
+                leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
+              ),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 20, left: 20, right: 20),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      minScale: 0.5,
+                      maxScale: 4.0,
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(40.0),
+                              child: CircularProgressIndicator(color: Colors.cyanAccent),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          padding: const EdgeInsets.all(40),
+                          color: Colors.white.withOpacity(0.05),
+                          child: const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 40),
+                              SizedBox(height: 8),
+                              Text('Failed to load image', style: TextStyle(color: Colors.white60)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
