@@ -238,6 +238,17 @@ const ensureColumns = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Create System Updates table (For Windows notifications)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS system_updates (
+        id SERIAL PRIMARY KEY,
+        action_type TEXT,
+        employee_name TEXT,
+        details TEXT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
     
     // Safe Migrations
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'partial\'');

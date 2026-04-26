@@ -69,8 +69,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         if (latestEvent != null) {
           final eventId = int.tryParse(latestEvent['id']?.toString() ?? '0') ?? 0;
           
-          // Notify if it's a NEW event we haven't seen yet
-          if (_lastEventId != null && eventId > _lastEventId!) {
+          // Notify if it's a NEW event or the very first one we see
+          if (eventId > (_lastEventId ?? -1)) {
             _showEventNotification(latestEvent);
           }
           
