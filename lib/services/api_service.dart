@@ -4,9 +4,13 @@ import '../models/user.dart';
 import '../models/collection.dart';
 
 class ApiService {
-  // Replace '192.168.1.XX' with your computer's actual local IP address
-  static const String baseUrl = 'https://collection.acmagencies.store'; 
-  //static const String baseUrl = 'http://192.168.1.18:3000'; 
+  static const String baseUrl = 'https://collection.acmagencies.store';
+
+  static String getImageUrl(String path) {
+    if (path.startsWith('http')) return path;
+    final serverBase = baseUrl.replaceAll('/api', '');
+    return '$serverBase$path';
+  }
 
   static Future<void> requestOTP(String email) async {
     final response = await http.post(
@@ -41,7 +45,7 @@ class ApiService {
     }
   }
 
-  static Future<void> addCollection(Collection collection, String token) async {
+  static Future<Map<String, dynamic>?> syncCollection(Collection collection, String token) async {
     final uri = Uri.parse('$baseUrl/api/collections');
     var request = http.MultipartRequest('POST', uri);
     
@@ -57,19 +61,35 @@ class ApiService {
     request.fields['status'] = collection.status;
     request.fields['cash_amount'] = collection.cashAmount.toString();
     request.fields['upi_amount'] = collection.upiAmount.toString();
-
-    // Add files if they exist (local paths)
-    if (collection.billProof != null && !collection.billProof!.startsWith('http')) {
-      request.files.add(await http.MultipartFile.fromPath('billProof', collection.billProof!));
-    }
-    if (collection.paymentProof != null && !collection.paymentProof!.startsWith('http')) {
-      request.files.add(await http.MultipartFile.fromPath('paymentProof', collection.paymentProof!));
+    if (collection.groupId != null) {
+      request.fields['group_id'] = collection.groupId!;
     }
 
-    final response = await request.send();
-    if (response.statusCode != 201 && response.statusCode != 200) {
-      final respStr = await response.stream.bytesToString();
-      throw Exception('Failed to sync: $respStr');
+    // Add files if they exist (local paths) or add as string if already a URL
+    if (collection.billProof != null) {
+      if (collection.billProof!.startsWith('http') || collection.billProof!.startsWith('/uploads')) {
+        request.fields['bill_proof'] = collection.billProof!;
+      } else {
+        request.files.add(await http.MultipartFile.fromPath('billProof', collection.billProof!));
+      }
+    }
+    
+    if (collection.paymentProof != null) {
+      if (collection.paymentProof!.startsWith('http') || collection.paymentProof!.startsWith('/uploads')) {
+        request.fields['payment_proof'] = collection.paymentProof!;
+      } else {
+        request.files.add(await http.MultipartFile.fromPath('paymentProof', collection.paymentProof!));
+      }
+    }
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      print('Sync Error: ${response.body}');
+      return null;
     }
   }
 
@@ -145,15 +165,6 @@ class ApiService {
     }
   }
 
-  static Future<bool> syncCollection(Collection collection, String token) async {
-    try {
-      await addCollection(collection, token);
-      return true;
-    } catch (e) {
-      print('Sync Error: $e');
-      return false;
-    }
-  }
 
   static Future<List<dynamic>> getEmployees(String token) async {
     final response = await http.get(
@@ -252,6 +263,17 @@ class ApiService {
     } catch (e) {
       print('Delete Collection Error: $e');
       return false;
+    }
+  }
+  static Future<Map<String, dynamic>> getAdminDashboard(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/admin/dashboard'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to load admin dashboard');
     }
   }
 }

@@ -26,6 +26,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
   String _selectedStatusFilter = 'all';
   final _searchController = TextEditingController();
   String _searchQuery = "";
+  final Set<String> _expandedGroups = {};
 
   @override
   void initState() {
@@ -73,8 +74,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       // Date Filter
       bool matchesDate = true;
       if (_startDate != null && _endDate != null) {
-        final date = DateTime.parse(c['date']);
-        final d = DateTime(date.year, date.month, date.day);
+        final rawDate = DateTime.parse(c['date'].toString());
+        final localDate = rawDate.toLocal();
+        final d = DateTime(localDate.year, localDate.month, localDate.day);
         matchesDate = d.isAfter(_startDate!.subtract(const Duration(days: 1))) && 
                       d.isBefore(_endDate!.add(const Duration(days: 1)));
       }
@@ -82,7 +84,8 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       // Mode Filter
       bool matchesMode = true;
       if (_selectedMode != 'all') {
-        matchesMode = c['payment_mode'].toString().toLowerCase() == _selectedMode;
+        final mode = c['payment_mode'].toString().toLowerCase();
+        matchesMode = mode == _selectedMode || (_selectedMode == 'upi' && mode == 'both');
       }
 
       // Status Filter
@@ -166,9 +169,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator(color: Colors.cyanAccent))
-        : RefreshIndicator(
+      body: RefreshIndicator(
             onRefresh: _fetchHistory,
             color: Colors.cyanAccent,
             backgroundColor: const Color(0xFF16213E),
@@ -229,14 +230,42 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                   ),
                 ),
                 Expanded(
-                  child: filtered.isEmpty 
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(20),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) => _buildRecordItem(filtered[index]),
-                    ),
+                  child: _isLoading 
+                    ? const Center(child: CircularProgressIndicator(color: Colors.cyanAccent))
+                    : filtered.isEmpty
+                      ? _buildEmptyState()
+                      : Builder(
+                          builder: (context) {
+                            // Grouping logic for Admin view
+                            final Map<String, List<dynamic>> grouped = {};
+                            for (var c in filtered) {
+                              final gId = c['group_id']?.toString();
+                              final dateStr = c['date'].toString();
+                              final key = (gId != null && gId.isNotEmpty) 
+                                ? gId 
+                                : "${c['shop_name']}_$dateStr";
+                              if (!grouped.containsKey(key)) grouped[key] = [];
+                              grouped[key]!.add(c);
+                            }
+                            final groupIds = grouped.keys.toList();
+                            groupIds.sort((a, b) {
+                              final dateA = DateTime.parse(grouped[a]!.first['date']);
+                              final dateB = DateTime.parse(grouped[b]!.first['date']);
+                              return dateB.compareTo(dateA);
+                            });
+
+                            return ListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              itemCount: groupIds.length,
+                              itemBuilder: (context, index) {
+                                final gid = groupIds[index];
+                                final items = grouped[gid]!;
+                                return _buildGroupedItem(gid, items);
+                              },
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
@@ -261,134 +290,214 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  Widget _buildRecordItem(dynamic coll) {
-    final date = DateTime.parse(coll['date']);
-    return GestureDetector(
-      onLongPress: () => _showEditBottomSheet(coll),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.05)),
-        ),
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.cyanAccent.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+  Widget _buildGroupedItem(String groupId, List<dynamic> items) {
+    final first = items.first;
+    final bool isGroup = items.length > 1;
+    final bool isExpanded = _expandedGroups.contains(groupId);
+    final totalGroupAmount = items.fold(0.0, (sum, c) => sum + (double.tryParse(c['amount'].toString()) ?? 0));
+    
+    String? sharedPaymentProof;
+    if (isGroup) {
+      final proofItems = items.where((element) => element['payment_mode'].toString().toLowerCase() != 'cash').toList();
+      if (proofItems.isNotEmpty) {
+        final firstP = proofItems.first['payment_proof'];
+        if (firstP != null && proofItems.every((element) => element['payment_proof'] == firstP)) {
+          sharedPaymentProof = firstP;
+        }
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                if (isGroup) {
+                  setState(() {
+                    if (isExpanded) _expandedGroups.remove(groupId);
+                    else _expandedGroups.add(groupId);
+                  });
+                } else {
+                  _showEditBottomSheet(first);
+                }
+              },
+              onLongPress: () => _showEditBottomSheet(first),
+              borderRadius: BorderRadius.circular(24),
+              splashColor: Colors.cyanAccent.withOpacity(0.1),
+              highlightColor: Colors.cyanAccent.withOpacity(0.05),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.cyanAccent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isGroup ? Icons.layers_rounded : Icons.storefront_rounded, 
+                        color: Colors.cyanAccent
+                      ),
                     ),
-                    child: const Icon(Icons.receipt_long_rounded, color: Colors.cyanAccent),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                coll['shop_name'], 
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                                softWrap: true,
-                              ),
-                            ),
-                            if (coll['status'] == 'completed') ...[
-                              const SizedBox(width: 4),
-                              const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
-                            ],
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: coll['status'] == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                (coll['status'] ?? 'PARTIAL').toString().toUpperCase(),
-                                style: TextStyle(
-                                  color: coll['status'] == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            first['shop_name'].toString(), 
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isGroup 
+                              ? '${items.length} Bills • ${DateFormat('dd MMM, hh:mm a').format(DateTime.parse(first['date']))}'
+                              : '${first['bill_no']} • ${DateFormat('dd MMM, hh:mm a').format(DateTime.parse(first['date']))}',
+                            style: const TextStyle(color: Colors.white60, fontSize: 12),
+                          ),
+                          if (sharedPaymentProof != null) ...[
+                            const SizedBox(height: 8),
+                            _buildProofChip('PAYMENT PROOF', sharedPaymentProof),
+                          ] else if (!isGroup && (first['bill_proof'] != null || first['payment_proof'] != null)) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                if (first['bill_proof'] != null) _buildProofChip('BILL', first['bill_proof']),
+                                if (first['payment_proof'] != null) ...[
+                                  if (first['bill_proof'] != null) const SizedBox(width: 8),
+                                  _buildProofChip('PAY', first['payment_proof']),
+                                ],
+                              ],
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Bill: ${coll['bill_no']} • ${DateFormat('dd MMM, hh:mm a').format(date)}',
-                          style: const TextStyle(color: Colors.white60, fontSize: 12),
-                        ),
-                        if (coll['bill_proof'] != null || coll['payment_proof'] != null) ...[
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              if (coll['bill_proof'] != null)
-                                _buildProofChip('Bill Proof', coll['bill_proof']),
-                              if (coll['payment_proof'] != null)
-                                _buildProofChip('Payment Proof', coll['payment_proof']),
-                            ],
-                          ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '₹${coll['amount']}',
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '₹${totalGroupAmount.toInt()}',
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
                         ),
-                      ),
-                      Text(
-                        coll['payment_mode'].toString().toUpperCase(),
-                        style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                      if (coll['payment_mode'].toString().toLowerCase() == 'both') ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          'Cash: ₹${(double.tryParse(coll['cash_amount']?.toString() ?? '0') ?? 0).toInt()} | UPI: ₹${(double.tryParse(coll['upi_amount']?.toString() ?? '0') ?? 0).toInt()}',
-                          style: const TextStyle(color: Colors.white38, fontSize: 9),
-                        ),
+                        if (isGroup)
+                          Icon(
+                            isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                            color: Colors.cyanAccent,
+                            size: 20,
+                          ),
                       ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              top: 0,
-              right: 0,
-              child: GestureDetector(
-                onTap: () => _confirmDelete(coll),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent.withOpacity(0.1),
-                    borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(20),
-                      bottomLeft: Radius.circular(16),
                     ),
-                  ),
-                  child: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 16),
+                  ],
                 ),
               ),
             ),
+          ),
+          
+          if (isExpanded && isGroup) ...[
+            const Divider(color: Colors.white10, height: 1),
+            ...items.map((coll) => _buildSubBillItem(coll, sharedPaymentProof)).toList(),
+            
+            if (sharedPaymentProof != null)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.cyanAccent.withOpacity(0.03),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.cyanAccent.withOpacity(0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.qr_code_scanner_rounded, color: Colors.cyanAccent, size: 20),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Text('Unified Payment Proof', style: TextStyle(color: Colors.white70, fontSize: 12))),
+                      _buildProofChip('VIEW', sharedPaymentProof),
+                    ],
+                  ),
+                ),
+              ),
           ],
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubBillItem(dynamic coll, String? sharedPaymentProof) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.white10, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Text('Bill #${coll['bill_no']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (coll['status'] ?? 'partial') == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        (coll['status'] ?? 'PARTIAL').toString().toUpperCase(),
+                        style: TextStyle(
+                          color: (coll['status'] ?? 'partial') == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  coll['payment_mode'].toString().toLowerCase() == 'both'
+                    ? 'Mode: BOTH (Cash: ₹${(double.tryParse(coll['cash_amount'].toString()) ?? 0).toInt()} + UPI: ₹${(double.tryParse(coll['upi_amount'].toString()) ?? 0).toInt()})'
+                    : 'Mode: ${coll['payment_mode'].toString().toUpperCase()} • ₹${(double.tryParse(coll['amount'].toString()) ?? 0).toInt()}',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  softWrap: true,
+                ),
+              ],
+            ),
+          ),
+          if (coll['bill_proof'] != null) _buildProofChip('BILL', coll['bill_proof']),
+          if (coll['payment_proof'] != null && coll['payment_proof'] != sharedPaymentProof) ...[ 
+            const SizedBox(width: 8),
+            _buildProofChip('PAY', coll['payment_proof']),
+          ],
+          const SizedBox(width: 8),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.edit_rounded, size: 16, color: Colors.white38),
+            onPressed: () => _showEditDialog(coll),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
+            onPressed: () => _confirmDelete(coll),
+          ),
+        ],
       ),
     );
   }
@@ -449,8 +558,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
   }
 
   void _showImageViewer(String path, String title) {
-    final serverBase = ApiService.baseUrl.replaceAll('/api', '');
-    final imageUrl = path.startsWith('http') ? path : '$serverBase$path';
+    final imageUrl = ApiService.getImageUrl(path);
     
     showDialog(
       context: context,
@@ -922,6 +1030,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
 
   Widget _buildStyledEditField(TextEditingController controller, String label, IconData icon, {bool isNumber = false, bool isReadOnly = false, Function(String)? onChanged}) {
     return TextField(
+      key: ValueKey('edit_$label'),
       controller: controller,
       readOnly: isReadOnly,
       onChanged: onChanged,
@@ -1052,6 +1161,191 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showEditDialog(dynamic coll) {
+    final billController = TextEditingController(text: coll['bill_no']);
+    final shopController = TextEditingController(text: coll['shop_name']);
+    final amountController = TextEditingController(text: coll['amount'].toString());
+    final cashController = TextEditingController(text: (coll['cash_amount'] ?? 0).toString());
+    final upiController = TextEditingController(text: (coll['upi_amount'] ?? 0).toString());
+    String mode = coll['payment_mode'];
+    String status = coll['status'] ?? 'partial';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16213E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      builder: (context) {
+        bool isSaving = false;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 24, left: 24, right: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+                    const SizedBox(height: 24),
+                    const Text('Edit Record (Admin)', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 32),
+                    _buildAdminEditField(billController, 'Bill No', Icons.numbers),
+                    const SizedBox(height: 16),
+                    _buildAdminEditField(shopController, 'Shop Name', Icons.store),
+                    const SizedBox(height: 16),
+                    _buildAdminEditField(amountController, 'Total Amount', Icons.currency_rupee, isNumber: true, isReadOnly: mode == 'both'),
+                    if (mode == 'both') ...[
+                       const SizedBox(height: 16),
+                       Row(children: [
+                         Expanded(child: _buildAdminEditField(cashController, 'Cash', Icons.money, isNumber: true, onChanged: (v) {
+                            double c = double.tryParse(v) ?? 0;
+                            double u = double.tryParse(upiController.text) ?? 0;
+                            amountController.text = (c + u).toString();
+                         })),
+                         const SizedBox(width: 12),
+                         Expanded(child: _buildAdminEditField(upiController, 'UPI', Icons.account_balance, isNumber: true, onChanged: (v) {
+                            double u = double.tryParse(v) ?? 0;
+                            double c = double.tryParse(cashController.text) ?? 0;
+                            amountController.text = (c + u).toString();
+                         })),
+                       ]),
+                    ],
+                    const SizedBox(height: 24),
+                    _buildAdminModeSelector(mode, (newMode) => setModalState(() => mode = newMode)),
+                    const SizedBox(height: 24),
+                    _buildAdminStatusSelector(status, (newStatus) => setModalState(() => status = newStatus)),
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.cyanAccent,
+                          foregroundColor: const Color(0xFF1A1A2E),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: isSaving ? null : () async {
+                          setModalState(() => isSaving = true);
+                          final auth = Provider.of<AuthProvider>(context, listen: false);
+                          
+                          final fields = {
+                            'bill_no': billController.text,
+                            'shop_name': shopController.text,
+                            'amount': amountController.text,
+                            'payment_mode': mode,
+                            'status': status,
+                            'cash_amount': cashController.text,
+                            'upi_amount': upiController.text,
+                          };
+
+                          final result = await ApiService.updateCollection(coll['id'], fields, auth.user!.token!);
+                          if (result != null) {
+                            _fetchHistory();
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated successfully')));
+                          } else {
+                            setModalState(() => isSaving = false);
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Update failed'), backgroundColor: Colors.redAccent));
+                          }
+                        },
+                        child: isSaving 
+                          ? const CircularProgressIndicator(color: Color(0xFF1A1A2E))
+                          : const Text('SAVE CHANGES', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAdminEditField(TextEditingController controller, String label, IconData icon, {bool isNumber = false, bool isReadOnly = false, Function(String)? onChanged}) {
+    return TextField(
+      controller: controller,
+      readOnly: isReadOnly,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      onChanged: onChanged,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white38),
+        prefixIcon: Icon(icon, color: Colors.cyanAccent, size: 20),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.05),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.cyanAccent)),
+      ),
+    );
+  }
+
+  Widget _buildAdminModeSelector(String current, Function(String) onSelect) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('PAYMENT MODE', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Row(
+          children: ['cash', 'upi', 'cheque', 'both'].map((m) {
+            final isSel = current == m;
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => onSelect(m),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSel ? Colors.cyanAccent : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(child: Text(m.toUpperCase(), style: TextStyle(color: isSel ? Colors.black : Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAdminStatusSelector(String current, Function(String) onSelect) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('STATUS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Row(
+          children: ['partial', 'completed'].map((s) {
+            final isSel = current == s;
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => onSelect(s),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSel ? Colors.cyanAccent.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: isSel ? Colors.cyanAccent : Colors.transparent),
+                  ),
+                  child: Center(child: Text(s.toUpperCase(), style: TextStyle(color: isSel ? Colors.cyanAccent : Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 }

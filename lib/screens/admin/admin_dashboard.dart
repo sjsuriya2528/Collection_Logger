@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
@@ -18,38 +19,62 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<dynamic> _employees = [];
   Map<String, dynamic> _summary = {'today_total': 0, 'breakdown': []};
   bool _isLoading = false;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _refreshAll();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _fetchEmployees();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _refreshAll() async {
     setState(() => _isLoading = true);
-    await Future.wait([
-      _fetchEmployees(),
-      _fetchDashboardSummary(),
-    ]);
+    await _fetchEmployees();
     setState(() => _isLoading = false);
   }
 
   Future<void> _fetchEmployees() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
-    final emps = await ApiService.getEmployees(auth.user!.token!);
-    _employees = emps;
+    if (auth.user?.token == null) return;
+
+    try {
+      // 1. Fetch Summary Data (Server-side IST safe)
+      final summary = await ApiService.getAdminDashboard(auth.user!.token!);
+      
+      // 2. Fetch Employee List (Server-side IST safe)
+      final emps = await ApiService.getEmployees(auth.user!.token!);
+
+      if (mounted) {
+        setState(() {
+          _summary = summary;
+          _employees = emps;
+        });
+      }
+    } catch (e) {
+      print('Dashboard Refresh Error: $e');
+    }
   }
 
   Future<void> _fetchDashboardSummary() async {
+    // This method is now secondary to the deep refresh in _fetchEmployees
+    // but we'll keep it for any additional breakdown info the server might provide
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/admin/dashboard'),
+        Uri.parse('${ApiService.baseUrl}/api/admin/dashboard?t=${DateTime.now().millisecondsSinceEpoch}'),
         headers: {'Authorization': 'Bearer ${auth.user!.token}'},
       );
-      if (response.statusCode == 200) {
-        _summary = jsonDecode(response.body);
-      }
+      // We only update if we haven't already calculated a more accurate total
+      // Actually, let's just let _fetchEmployees do the work for now to ensure consistency
     } catch (e) {
       print('Dashboard Summary Error: $e');
     }
@@ -86,7 +111,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-            onPressed: _refreshAll,
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Syncing data...'), duration: Duration(seconds: 1)));
+              _refreshAll();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.white),
@@ -201,8 +229,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final breakdown = _summary['breakdown'] as List? ?? [];
     
     double getModeTotal(String mode) {
-      final item = breakdown.firstWhere((e) => e['payment_mode'] == mode.toLowerCase(), orElse: () => null);
-      return item != null ? double.parse(item['total'].toString()) : 0.0;
+      try {
+        final item = breakdown.firstWhere(
+          (e) => e['payment_mode'] == mode.toLowerCase(), 
+          orElse: () => <String, dynamic>{'payment_mode': mode, 'total': 0.0}
+        );
+        return double.parse(item['total'].toString());
+      } catch (e) {
+        return 0.0;
+      }
     }
 
     return Column(
@@ -290,12 +325,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildEmployeeCard(dynamic emp, int index) {
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => EmployeeHistoryScreen(employeeId: emp['user_id'].toString(), employeeName: emp['name']),
-        ),
-      ),
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EmployeeHistoryScreen(employeeId: emp['user_id'].toString(), employeeName: emp['name']),
+          ),
+        );
+        _refreshAll();
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),

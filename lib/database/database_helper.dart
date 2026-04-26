@@ -20,7 +20,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -41,7 +41,8 @@ class DatabaseHelper {
         bill_proof TEXT,
         payment_proof TEXT,
         cash_amount REAL DEFAULT 0,
-        upi_amount REAL DEFAULT 0
+        upi_amount REAL DEFAULT 0,
+        group_id TEXT
       )
     ''');
   }
@@ -55,6 +56,9 @@ class DatabaseHelper {
     if (oldVersion < 3) {
       await db.execute("ALTER TABLE collections ADD COLUMN cash_amount REAL DEFAULT 0");
       await db.execute("ALTER TABLE collections ADD COLUMN upi_amount REAL DEFAULT 0");
+    }
+    if (oldVersion < 4) {
+      await db.execute("ALTER TABLE collections ADD COLUMN group_id TEXT");
     }
   }
 

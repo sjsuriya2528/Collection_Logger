@@ -21,6 +21,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   String _selectedStatusFilter = 'all';
   final _searchController = TextEditingController();
   String _searchQuery = "";
+  final Set<String> _expandedGroups = {};
 
   @override
   void initState() {
@@ -57,15 +58,18 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
       // Date Filter
       bool matchesDate = true;
       if (_startDate != null && _endDate != null) {
-        final date = DateTime(c.date.year, c.date.month, c.date.day);
-        matchesDate = date.isAfter(_startDate!.subtract(const Duration(days: 1))) && 
-                      date.isBefore(_endDate!.add(const Duration(days: 1)));
+        final rawDate = c.date;
+        final localDate = rawDate.toLocal();
+        final d = DateTime(localDate.year, localDate.month, localDate.day);
+        matchesDate = d.isAfter(_startDate!.subtract(const Duration(days: 1))) && 
+                      d.isBefore(_endDate!.add(const Duration(days: 1)));
       }
 
       // Mode Filter
       bool matchesMode = true;
       if (_selectedMode != 'all') {
-        matchesMode = c.paymentMode.name.toLowerCase() == _selectedMode;
+        final mode = c.paymentMode.name.toLowerCase();
+        matchesMode = mode == _selectedMode || (_selectedMode == 'upi' && mode == 'both');
       }
 
       // Status Filter
@@ -170,11 +174,43 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
           Expanded(
             child: filteredCollections.isEmpty
               ? _buildEmptyState()
-              : ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: filteredCollections.length,
-                  itemBuilder: (context, index) {
-                    return _buildHistoryItem(filteredCollections[index]);
+              : Builder(
+                  builder: (context) {
+                    final Map<String, List<Collection>> grouped = {};
+                    for (var c in filteredCollections) {
+                      final String timeKey = DateFormat('yyyyMMddHHmm').format(c.date);
+                      final key = (c.groupId != null && c.groupId!.isNotEmpty) 
+                        ? c.groupId! 
+                        : "${c.shopName}_$timeKey";
+                      if (!grouped.containsKey(key)) grouped[key] = [];
+                      grouped[key]!.add(c);
+                    }
+                    final groupIds = grouped.keys.toList();
+                    groupIds.sort((a, b) {
+                      final dateA = grouped[a]!.first.date;
+                      final dateB = grouped[b]!.first.date;
+                      return dateB.compareTo(dateA);
+                    });
+
+                    return RefreshIndicator(
+                      color: Colors.cyanAccent,
+                      backgroundColor: const Color(0xFF1A1A2E),
+                      onRefresh: () async {
+                        final auth = Provider.of<AuthProvider>(context, listen: false);
+                        final provider = Provider.of<CollectionProvider>(context, listen: false);
+                        await provider.pullFromServer(auth.user!.token!, auth.user!.id.toString());
+                      },
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(20),
+                        physics: const AlwaysScrollableScrollPhysics(), // Ensures swipe works even if list is short
+                        itemCount: groupIds.length,
+                        itemBuilder: (context, index) {
+                          final gid = groupIds[index];
+                          final items = grouped[gid]!;
+                          return _buildGroupedItem(gid, items);
+                        },
+                      ),
+                    );
                   },
                 ),
           ),
@@ -378,114 +414,222 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     );
   }
 
-  Widget _buildHistoryItem(Collection coll) {
+  Widget _buildGroupedItem(String groupId, List<Collection> items) {
+    final first = items.first;
+    final bool isGroup = items.length > 1;
+    final bool isExpanded = _expandedGroups.contains(groupId);
+    final totalGroupAmount = items.fold(0.0, (sum, c) => sum + c.amount);
+    // For unified payments, check if all items share the same paymentProof
+    String? sharedPaymentProof;
+    if (isGroup) {
+      final proofItems = items.where((element) => element.paymentMode != PaymentMode.cash).toList();
+      if (proofItems.isNotEmpty) {
+        final firstP = proofItems.first.paymentProof;
+        if (firstP != null && proofItems.every((element) => element.paymentProof == firstP)) {
+          sharedPaymentProof = firstP;
+        }
+      }
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      child: GestureDetector(
-        onLongPress: () => _showEditBottomSheet(coll),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.cyanAccent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.storefront_rounded, color: Colors.cyanAccent),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Column(
+        children: [
+          // Main Header Card
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                if (isGroup) {
+                  setState(() {
+                    if (isExpanded) _expandedGroups.remove(groupId);
+                    else _expandedGroups.add(groupId);
+                  });
+                } else {
+                  _showEditBottomSheet(first);
+                }
+              },
+              onLongPress: () => _showEditBottomSheet(first),
+              borderRadius: BorderRadius.circular(24),
+              splashColor: Colors.cyanAccent.withOpacity(0.1),
+              highlightColor: Colors.cyanAccent.withOpacity(0.05),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            coll.shopName, 
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                            softWrap: true,
-                          ),
-                        ),
-                        if (coll.status == 'completed') ...[
-                          const SizedBox(width: 4),
-                          const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
-                        ],
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: coll.status == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            coll.status.toUpperCase(),
-                            style: TextStyle(
-                              color: coll.status == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.cyanAccent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isGroup ? Icons.layers_rounded : Icons.storefront_rounded, 
+                        color: Colors.cyanAccent
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${coll.billNo} • ${DateFormat('dd MMM, hh:mm a').format(coll.date)}',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                    if (coll.billProof != null || coll.paymentProof != null) ...[
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (coll.billProof != null)
-                            _buildProofChip('Bill Proof', coll.billProof!),
-                          if (coll.paymentProof != null)
-                            _buildProofChip('Payment Proof', coll.paymentProof!),
+                          Text(
+                            first.shopName, 
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isGroup 
+                              ? '${items.length} Bills • ${DateFormat('dd MMM, hh:mm a').format(first.date)}'
+                              : '${first.billNo} • ${DateFormat('dd MMM, hh:mm a').format(first.date)}',
+                            style: const TextStyle(color: Colors.white60, fontSize: 12),
+                          ),
+                          if (sharedPaymentProof != null) ...[
+                            const SizedBox(height: 8),
+                            _buildProofChip('PAYMENT PROOF', sharedPaymentProof),
+                          ] else if (!isGroup && (first.billProof != null || first.paymentProof != null)) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                if (first.billProof != null) _buildProofChip('BILL', first.billProof!),
+                                if (first.paymentProof != null) ...[
+                                  if (first.billProof != null) const SizedBox(width: 8),
+                                  _buildProofChip('PAY', first.paymentProof!),
+                                ],
+                              ],
+                            ),
+                          ],
                         ],
                       ),
-                    ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '₹${totalGroupAmount.toInt()}',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                        ),
+                        if (isGroup)
+                          Icon(
+                            isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                            color: Colors.cyanAccent,
+                            size: 20,
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      '₹${coll.amount.toInt()}',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    coll.paymentMode.name.toUpperCase(),
-                    style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold),
-                  ),
-                  if (coll.paymentMode == PaymentMode.both) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'Cash: ₹${coll.cashAmount.toInt()} | UPI: ₹${coll.upiAmount.toInt()}',
-                      style: const TextStyle(color: Colors.white38, fontSize: 9),
-                    ),
-                  ],
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+          
+          // Expanded Bills List
+          if (isExpanded && isGroup) ...[
+            const Divider(color: Colors.white10, height: 1),
+            ...items.map((coll) => _buildSubBillItem(coll, sharedPaymentProof)).toList(),
+            
+            if (sharedPaymentProof != null)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.cyanAccent.withOpacity(0.03),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.cyanAccent.withOpacity(0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.qr_code_scanner_rounded, color: Colors.cyanAccent, size: 20),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Text('Unified Payment Proof', style: TextStyle(color: Colors.white70, fontSize: 12))),
+                      _buildProofChip('VIEW', sharedPaymentProof),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ],
       ),
     );
+  }
+
+  Widget _buildSubBillItem(Collection coll, String? sharedPaymentProof) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.white10, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Text('Bill #${coll.billNo}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: coll.status == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        coll.status.toUpperCase(),
+                        style: TextStyle(
+                          color: coll.status == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  coll.paymentMode.name.toLowerCase() == 'both'
+                    ? 'Mode: BOTH (Cash: ₹${coll.cashAmount.toInt()} + UPI: ₹${coll.upiAmount.toInt()})'
+                    : 'Mode: ${coll.paymentMode.name.toUpperCase()} • ₹${coll.amount.toInt()}',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  softWrap: true,
+                ),
+              ],
+            ),
+          ),
+          if (coll.billProof != null) _buildProofChip('BILL', coll.billProof!),
+          if (coll.paymentProof != null && coll.paymentProof != sharedPaymentProof) ...[ 
+            const SizedBox(width: 8),
+            _buildProofChip('PAY', coll.paymentProof!),
+          ],
+          const SizedBox(width: 8),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.edit_rounded, size: 16, color: Colors.white38),
+            onPressed: () => _showEditBottomSheet(coll),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
+            onPressed: () => _showDeleteConfirmation(coll),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryItem(Collection coll) {
+    return _buildGroupedItem(coll.id, [coll]);
   }
 
   void _showEditBottomSheet(Collection coll) {
@@ -743,6 +887,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
 
   Widget _buildStyledEditField(TextEditingController controller, String label, IconData icon, {bool isNumber = false, bool isReadOnly = false, Function(String)? onChanged}) {
     return TextField(
+      key: ValueKey('emp_edit_$label'),
       controller: controller,
       readOnly: isReadOnly,
       onChanged: onChanged,
@@ -830,8 +975,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
 
   void _showImageViewer(String path, String title) {
     final isLocal = !path.startsWith('http') && !path.startsWith('/uploads');
-    final serverBase = ApiService.baseUrl.replaceAll('/api', '');
-    final imageUrl = path.startsWith('http') ? path : '$serverBase$path';
+    final imageUrl = ApiService.getImageUrl(path);
     
     showDialog(
       context: context,
@@ -944,6 +1088,40 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+  void _showDeleteConfirmation(Collection coll) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('Delete Record?', style: TextStyle(color: Colors.white)),
+        content: Text('Are you sure you want to delete bill #${coll.billNo}?', style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              Navigator.pop(context);
+              final auth = Provider.of<AuthProvider>(context, listen: false);
+              final provider = Provider.of<CollectionProvider>(context, listen: false);
+              
+              final success = await ApiService.deleteCollection(coll.id, auth.user!.token!);
+              if (success) {
+                await provider.pullFromServer(auth.user!.token!, auth.user!.id.toString());
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Record deleted'), backgroundColor: Colors.green));
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete'), backgroundColor: Colors.redAccent));
+                }
+              }
+            },
+            child: const Text('DELETE'),
+          ),
+        ],
       ),
     );
   }

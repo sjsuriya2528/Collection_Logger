@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
@@ -16,16 +17,28 @@ class EmployeeDashboard extends StatefulWidget {
 }
 
 class _EmployeeDashboardState extends State<EmployeeDashboard> {
+  Timer? _refreshTimer;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      Provider.of<CollectionProvider>(context, listen: false)
-          .fetchCollections(auth.user!.id, token: auth.user!.token);
-      Provider.of<CollectionProvider>(context, listen: false)
-          .syncAllPending(auth.user!.token!);
+      final collProvider = Provider.of<CollectionProvider>(context, listen: false);
+      collProvider.fetchCollections(auth.user!.id, token: auth.user!.token);
+      collProvider.syncAllPending(auth.user!.token!);
+      
+      _refreshTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
+        if (mounted) {
+          collProvider.pullFromServer(auth.user!.token!, auth.user!.id);
+        }
+      });
     });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   @override

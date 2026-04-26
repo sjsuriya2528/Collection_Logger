@@ -95,14 +95,13 @@ class CollectionProvider with ChangeNotifier {
     }
   }
 
-  Future<void> addCollection(Collection collection, String? token) async {
+  Future<void> addCollection(Collection collection, String? token, {bool syncImmediately = true}) async {
     await DatabaseHelper.instance.insertCollection(collection);
     _collections.insert(0, collection);
     notifyListeners();
-
-    if (token != null) {
-      // Background sync
-      _syncOne(collection, token);
+ 
+    if (token != null && syncImmediately) {
+      syncAllPending(token);
     }
   }
 
@@ -115,11 +114,36 @@ class CollectionProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _syncOne(Collection collection, String token) async {
+  Future<void> _syncOne(Collection collection, String token, [Map<String, String>? sessionFiles]) async {
     print('Sync: Uploading collection ${collection.id} (Bill: ${collection.billNo})...');
-    final success = await ApiService.syncCollection(collection, token);
-    if (success) {
+    
+    // 1. Apply any already-uploaded URLs from this session
+    Collection toSync = collection;
+    if (sessionFiles != null) {
+      String? bp = collection.billProof;
+      String? pp = collection.paymentProof;
+      bool mod = false;
+      if (bp != null && sessionFiles.containsKey(bp)) { bp = sessionFiles[bp]; mod = true; }
+      if (pp != null && sessionFiles.containsKey(pp)) { pp = sessionFiles[pp]; mod = true; }
+      if (mod) {
+        toSync = Collection.fromMap({...collection.toMap(), 'bill_proof': bp, 'payment_proof': pp});
+      }
+    }
+
+    final response = await ApiService.syncCollection(toSync, token);
+    if (response != null) {
       print('Sync: Successfully uploaded ${collection.id}');
+      
+      // 2. Record the server URLs in sessionFiles to avoid re-uploading same file
+      if (sessionFiles != null) {
+        if (collection.billProof != null && response['bill_proof'] != null) {
+          sessionFiles[collection.billProof!] = response['bill_proof'];
+        }
+        if (collection.paymentProof != null && response['payment_proof'] != null) {
+          sessionFiles[collection.paymentProof!] = response['payment_proof'];
+        }
+      }
+
       await DatabaseHelper.instance.markAsSynced(collection.id);
       final index = _collections.indexWhere((c) => c.id == collection.id);
       if (index != -1) {
@@ -138,8 +162,12 @@ class CollectionProvider with ChangeNotifier {
     if (results.isEmpty || results.first == ConnectivityResult.none) return;
 
     final unsynced = await DatabaseHelper.instance.getUnsyncedCollections();
+    if (unsynced.isEmpty) return;
+
+    print('Sync: Starting batch sync for ${unsynced.length} records...');
+    final Map<String, String> sessionFiles = {};
     for (var coll in unsynced) {
-      await _syncOne(coll, token);
+      await _syncOne(coll, token, sessionFiles);
     }
   }
 }

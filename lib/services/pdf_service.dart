@@ -116,7 +116,7 @@ class PdfService {
                     children: [
                       _tableCell(DateFormat('dd-MM-yy').format(date)),
                       _tableCell(c['shop_name'].toString()),
-                      _tableCell(c['status'] == 'completed' ? "${c['bill_no']} (Completed)" : c['bill_no'].toString()),
+                      _tableCell(c['status'].toString().toLowerCase() == 'completed' ? "${c['bill_no']} (Completed)" : c['bill_no'].toString()),
                       _tableCell(c['payment_mode'].toString().toUpperCase()),
                       _tableCell('Rs. ${c['amount']}'),
                     ],

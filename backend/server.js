@@ -1,3 +1,4 @@
+process.env.TZ = 'Asia/Kolkata';
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
@@ -13,18 +14,35 @@ const db = require('./db');
 
 const app = express();
 
-// Cloudinary Config
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// Cloudinary Upload Helper
+const uploadToCloudinary = async (filePath, folder = 'collections') => {
+  try {
+    const result = await cloudinary.uploader.upload(filePath, {
+      folder,
+      resource_type: 'auto'
+    });
+    // Remove local file after upload
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return result.secure_url;
+  } catch (error) {
+    console.error('Cloudinary Upload Error:', error);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return null;
+  }
+};
+
 // Multer Config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-    cb(null, 'uploads/');
+    const uploadPath = 'D:/Projects/Collection_Logger/backend/uploads';
+    if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -54,7 +72,7 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => res.send('ACM Collection Logger Backend is running'));
 app.get('/api/auth/signup', (req, res) => res.send('Signup endpoint is alive. Use POST to register.'));
 
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static('D:/Projects/Collection_Logger/backend/uploads'));
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -86,6 +104,9 @@ const ensureColumns = async () => {
     const dbTest = await db.query('SELECT NOW()');
     console.log('✅ Connected to DB at:', dbTest.rows[0].now);
 
+    // Set the database session to Indian Standard Time
+    await db.query("SET TIME ZONE 'Asia/Kolkata'");
+    
     // Create Users table
     await db.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -113,14 +134,16 @@ const ensureColumns = async () => {
         bill_proof TEXT,
         payment_proof TEXT,
         cash_amount DECIMAL DEFAULT 0,
-        upi_amount DECIMAL DEFAULT 0
+        upi_amount DECIMAL DEFAULT 0,
+        group_id TEXT
       )
     `);
     
-    // Safe Migrations: Add new columns if they don't exist
+    // Safe Migrations
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'partial\'');
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS cash_amount DECIMAL DEFAULT 0');
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS upi_amount DECIMAL DEFAULT 0');
+    await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS group_id TEXT');
     
     console.log('Database schema verified and tables created');
   } catch (err) {
@@ -318,21 +341,6 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
   }
 });
 
-// Helper to upload to Cloudinary
-const uploadToCloudinary = async (filePath, folder) => {
-  try {
-    const result = await cloudinary.uploader.upload(filePath, {
-      folder: folder,
-      resource_type: 'auto'
-    });
-    // Remove local temp file
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    return result.secure_url;
-  } catch (err) {
-    console.error('Cloudinary Upload Error:', err);
-    return null;
-  }
-};
 
 // --- COLLECTION ENDPOINTS (Employee) ---
 
@@ -340,44 +348,16 @@ app.post('/api/collections', authenticateToken, upload.fields([
   { name: 'billProof', maxCount: 1 },
   { name: 'paymentProof', maxCount: 1 }
 ]), async (req, res) => {
-  const { id, bill_no, shop_name, amount, payment_mode, date, status, cash_amount, upi_amount } = req.body;
+  const { id, bill_no, shop_name, amount, payment_mode, date, status, cash_amount, upi_amount, group_id } = req.body;
   
   let billProofUrl = null;
   let paymentProofUrl = null;
 
   if (req.files && req.files['billProof']) {
-    billProofUrl = '/uploads/' + req.files['billProof'][0].filename;
-    // Background upload
-    const filePath = req.files['billProof'][0].path;
-    const recordId = id;
-    Promise.resolve().then(async () => {
-      try {
-        const cloudinaryUrl = await uploadToCloudinary(filePath, 'bills');
-        if (cloudinaryUrl) {
-          await db.query('UPDATE collections SET bill_proof = $1 WHERE id = $2', [cloudinaryUrl, recordId]);
-          console.log(`Background sync (POST): Bill proof uploaded for ${recordId}`);
-        }
-      } catch (e) {
-        console.error('Background Upload Error (POST Bill):', e);
-      }
-    });
+    billProofUrl = await uploadToCloudinary(req.files['billProof'][0].path);
   }
   if (req.files && req.files['paymentProof']) {
-    paymentProofUrl = '/uploads/' + req.files['paymentProof'][0].filename;
-    // Background upload
-    const filePath = req.files['paymentProof'][0].path;
-    const recordId = id;
-    Promise.resolve().then(async () => {
-      try {
-        const cloudinaryUrl = await uploadToCloudinary(filePath, 'payments');
-        if (cloudinaryUrl) {
-          await db.query('UPDATE collections SET payment_proof = $1 WHERE id = $2', [cloudinaryUrl, recordId]);
-          console.log(`Background sync (POST): Payment proof uploaded for ${recordId}`);
-        }
-      } catch (e) {
-        console.error('Background Upload Error (POST Payment):', e);
-      }
-    });
+    paymentProofUrl = await uploadToCloudinary(req.files['paymentProof'][0].path);
   }
 
   try {
@@ -388,17 +368,34 @@ app.post('/api/collections', authenticateToken, upload.fields([
     }
 
     await db.query(
-      'INSERT INTO collections (id, employee_id, bill_no, shop_name, amount, payment_mode, date, status, bill_proof, payment_proof, cash_amount, upi_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
-      [id, req.user.id, bill_no, shop_name, amount, payment_mode, date, status, billProofUrl, paymentProofUrl, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0)]
+      'INSERT INTO collections (id, employee_id, bill_no, shop_name, amount, payment_mode, date, status, bill_proof, payment_proof, cash_amount, upi_amount, group_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
+      [id, req.user.id, bill_no, shop_name, amount, payment_mode, date, status, billProofUrl, paymentProofUrl, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), group_id]
     );
-    res.status(201).json({ message: 'Collection synced' });
+    res.status(201).json({ 
+      message: 'Collection synced',
+      bill_proof: billProofUrl,
+      payment_proof: paymentProofUrl
+    });
   } catch (err) {
     console.error('Sync Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
+// Get current employee's collections
 app.get('/api/collections/mine', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM collections WHERE employee_id = $1 ORDER BY date DESC',
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/collections', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       'SELECT * FROM collections WHERE employee_id = $1 ORDER BY date DESC',
@@ -421,7 +418,7 @@ app.get('/api/employees', authenticateToken, async (req, res) => {
       COALESCE(SUM(c.amount), 0) as today_total
       FROM users u
       LEFT JOIN collections c ON u.id = c.employee_id 
-      AND (c.date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
+      AND c.date::date = CURRENT_DATE
       WHERE u.role = 'employee'
       GROUP BY u.id, u.name
     `);
@@ -438,7 +435,7 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
       const todayTotal = await db.query(`
         SELECT COALESCE(SUM(amount), 0) as total 
         FROM collections 
-        WHERE (date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
+        WHERE date::date = CURRENT_DATE
       `);
       
       const modeBreakdown = await db.query(`
@@ -453,7 +450,7 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
             ELSE 0 END), 0) as upi_total,
           COALESCE(SUM(CASE WHEN payment_mode = 'cheque' THEN amount ELSE 0 END), 0) as cheque_total
         FROM collections 
-        WHERE (date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
+        WHERE date::date = CURRENT_DATE
       `);
       
       // Transform breakdown to match expected format
@@ -508,38 +505,10 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
     let paymentProofUrl = req.body.payment_proof !== undefined ? req.body.payment_proof : ownerCheck.rows[0].payment_proof;
 
     if (req.files['bill_proof']) {
-      billProofUrl = '/uploads/' + req.files['bill_proof'][0].filename;
-      // Background upload to Cloudinary
-      const filePath = req.files['bill_proof'][0].path;
-      const recordId = id;
-      Promise.resolve().then(async () => {
-        try {
-          const cloudinaryUrl = await uploadToCloudinary(filePath, 'bills');
-          if (cloudinaryUrl) {
-            await db.query('UPDATE collections SET bill_proof = $1 WHERE id = $2', [cloudinaryUrl, recordId]);
-            console.log(`Background sync: Bill proof uploaded for ${recordId}`);
-          }
-        } catch (e) {
-          console.error('Background Upload Error (Bill):', e);
-        }
-      });
+      billProofUrl = await uploadToCloudinary(req.files['bill_proof'][0].path);
     }
     if (req.files['payment_proof']) {
-      paymentProofUrl = '/uploads/' + req.files['payment_proof'][0].filename;
-      // Background upload to Cloudinary
-      const filePath = req.files['payment_proof'][0].path;
-      const recordId = id;
-      Promise.resolve().then(async () => {
-        try {
-          const cloudinaryUrl = await uploadToCloudinary(filePath, 'payments');
-          if (cloudinaryUrl) {
-            await db.query('UPDATE collections SET payment_proof = $1 WHERE id = $2', [cloudinaryUrl, recordId]);
-            console.log(`Background sync: Payment proof uploaded for ${recordId}`);
-          }
-        } catch (e) {
-          console.error('Background Upload Error (Payment):', e);
-        }
-      });
+      paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path);
     }
 
     // NEW: Auto-clear proofs if status/mode no longer requires them
@@ -559,16 +528,22 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
   }
 });
 
-// Delete a collection record (Admin Only)
 app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
-  
   const { id } = req.params;
   try {
+    // Check ownership unless admin
+    if (req.user.role !== 'admin') {
+      const ownerCheck = await db.query('SELECT employee_id FROM collections WHERE id = $1', [id]);
+      if (ownerCheck.rows.length === 0) return res.status(404).json({ message: 'Record not found' });
+      if (ownerCheck.rows[0].employee_id !== req.user.id) {
+        return res.status(403).json({ message: 'You can only delete your own records' });
+      }
+    }
     const result = await db.query('DELETE FROM collections WHERE id = $1 RETURNING *', [id]);
     if (result.rows.length === 0) return res.status(404).json({ message: 'Record not found' });
     res.json({ message: 'Record deleted successfully' });
   } catch (err) {
+    console.error('Delete Error:', err);
     res.status(500).json({ error: err.message });
   }
 });

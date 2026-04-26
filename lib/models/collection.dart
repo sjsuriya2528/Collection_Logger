@@ -16,6 +16,7 @@ class Collection {
   final String? paymentProof;
   final double cashAmount;
   final double upiAmount;
+  final String? groupId;
 
   Collection({
     String? id,
@@ -31,26 +32,30 @@ class Collection {
     this.paymentProof,
     this.cashAmount = 0,
     this.upiAmount = 0,
+    this.groupId,
   }) : id = id ?? const Uuid().v4();
 
   factory Collection.fromMap(Map<String, dynamic> map) {
+    DateTime parsedDate = DateTime.parse(map['date'].toString()).toLocal();
+
     return Collection(
       id: map['id'],
-      employeeId: map['employee_id'].toString(),
-      billNo: map['bill_no'].toString(),
-      shopName: map['shop_name'],
-      amount: double.parse(map['amount'].toString()),
+      employeeId: map['employee_id']?.toString() ?? '',
+      billNo: (map['bill_no'] ?? map['billNo'] ?? '').toString(),
+      shopName: map['shop_name'] ?? map['shopName'] ?? '',
+      amount: double.tryParse((map['amount'] ?? 0).toString()) ?? 0,
       paymentMode: PaymentMode.values.firstWhere(
-        (e) => e.name.toLowerCase() == map['payment_mode'].toString().toLowerCase(),
+        (e) => e.name.toLowerCase() == (map['payment_mode'] ?? map['paymentMode']).toString().toLowerCase(),
         orElse: () => PaymentMode.cash,
       ),
-      date: DateTime.parse(map['date']),
+      date: parsedDate,
       isSynced: map['is_synced'] == 1 || map['is_synced'] == true,
       status: map['status'] ?? 'partial',
-      billProof: map['bill_proof'],
-      paymentProof: map['payment_proof'],
-      cashAmount: double.parse((map['cash_amount'] ?? 0).toString()),
-      upiAmount: double.parse((map['upi_amount'] ?? 0).toString()),
+      billProof: map['bill_proof'] ?? map['billProof'],
+      paymentProof: map['payment_proof'] ?? map['paymentProof'],
+      cashAmount: double.tryParse((map['cash_amount'] ?? map['cashAmount'] ?? 0).toString()) ?? 0,
+      upiAmount: double.tryParse((map['upi_amount'] ?? map['upiAmount'] ?? 0).toString()) ?? 0,
+      groupId: map['group_id'] ?? map['groupId'],
     );
   }
 
@@ -69,6 +74,7 @@ class Collection {
       'payment_proof': paymentProof,
       'cash_amount': cashAmount,
       'upi_amount': upiAmount,
+      'group_id': groupId,
     };
   }
 
@@ -82,6 +88,7 @@ class Collection {
       'amount': amount,
       'payment_mode': paymentMode.name,
       'date': date.toIso8601String(),
+      'group_id': groupId,
     };
   }
 }
