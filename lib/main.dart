@@ -8,15 +8,22 @@ import 'screens/admin/admin_dashboard.dart';
 import 'services/sync_service.dart';
 import 'services/notification_service.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'dart:io';
+import 'package:local_notifier/local_notifier.dart';
+import 'database/database_helper.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'dart:io';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (Platform.isWindows || Platform.isLinux) {
-    sqfliteFfiInit();
+  if (Platform.isWindows) {
     databaseFactory = databaseFactoryFfi;
+    sqfliteFfiInit();
+    
+    await localNotifier.setup(
+      appName: 'ACM Collection Logger',
+      shortcutPolicy: ShortcutPolicy.requireCreate,
+    );
   }
 
   // Only initialize Firebase on Mobile (Android/iOS)

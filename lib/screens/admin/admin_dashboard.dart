@@ -7,7 +7,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/collection_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/notification_service.dart';
+import 'package:local_notifier/local_notifier.dart';
 import 'employee_history_screen.dart';
+import 'dart:io';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -21,6 +23,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Map<String, dynamic> _summary = {'today_total': 0, 'breakdown': []};
   bool _isLoading = false;
   Timer? _refreshTimer;
+  double _lastTotal = 0;
 
   @override
   void initState() {
@@ -61,14 +64,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final emps = await ApiService.getEmployees(auth.user!.token!);
 
       if (mounted) {
+        final newTotal = double.tryParse(summary['today_total']?.toString() ?? '0') ?? 0;
+        
+        // Notify if total increased (New Collection)
+        if (_lastTotal > 0 && newTotal > _lastTotal && Platform.isWindows) {
+          _showWindowsNotification(newTotal - _lastTotal);
+        }
+
         setState(() {
           _summary = summary;
           _employees = emps;
+          _lastTotal = newTotal;
         });
       }
     } catch (e) {
       print('Dashboard Refresh Error: $e');
     }
+  }
+
+  void _showWindowsNotification(double increase) {
+    LocalNotification notification = LocalNotification(
+      title: "New Collection Received",
+      body: "A new payment of ₹${increase.toInt()} has been added.",
+      actions: [
+        LocalNotificationAction(text: "View Dashboard"),
+      ],
+    );
+    notification.show();
   }
 
   Future<void> _fetchDashboardSummary() async {

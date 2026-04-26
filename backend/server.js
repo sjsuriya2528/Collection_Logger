@@ -577,7 +577,12 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
       [bill_no, shop_name, parseFloat(amount), payment_mode, status || 'partial', billProofUrl, paymentProofUrl, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), id]
     );
 
-    sendAdminNotification('Collection Edited', `${req.user.name} updated Bill #${bill_no} for ${shop_name}`);
+    if (!req.user.name) {
+      const userRes = await db.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+      if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
+    }
+
+    sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated Bill #${bill_no} for ${shop_name}`);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -603,6 +608,16 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
       const count = await db.query('SELECT count(*) FROM collections WHERE payment_proof = $1', [deletedRecord.payment_proof]);
       if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(deletedRecord.payment_proof);
     }
+
+    if (!req.user.name) {
+      const userRes = await db.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+      if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
+    }
+
+    sendAdminNotification(
+      'Collection Deleted', 
+      `${req.user.name || 'An employee'} deleted Bill #${deletedRecord.bill_no} for ${deletedRecord.shop_name}`
+    );
 
     res.json({ message: 'Deleted successfully' });
   } catch (err) {
