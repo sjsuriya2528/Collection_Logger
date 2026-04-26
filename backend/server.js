@@ -474,17 +474,14 @@ const moment = require('moment-timezone');
 app.get('/api/employees', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
   try {
-    const startOfDay = moment.tz("Asia/Kolkata").startOf('day').toISOString();
-    const endOfDay = moment.tz("Asia/Kolkata").endOf('day').toISOString();
-
     const result = await db.query(`
       SELECT u.id as user_id, u.name, COALESCE(SUM(c.amount), 0) as today_total
       FROM users u
       LEFT JOIN collections c ON u.id = c.employee_id 
-        AND c.date >= $1 AND c.date <= $2
+        AND c.date::date = CURRENT_DATE
       WHERE u.role = 'employee'
       GROUP BY u.id, u.name
-    `, [startOfDay, endOfDay]);
+    `);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -494,14 +491,11 @@ app.get('/api/employees', authenticateToken, async (req, res) => {
 app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
     try {
-      const startOfDay = moment.tz("Asia/Kolkata").startOf('day').toISOString();
-      const endOfDay = moment.tz("Asia/Kolkata").endOf('day').toISOString();
-
       const todayTotal = await db.query(`
         SELECT COALESCE(SUM(amount), 0) as total 
         FROM collections 
-        WHERE date >= $1 AND date <= $2
-      `, [startOfDay, endOfDay]);
+        WHERE date::date = CURRENT_DATE
+      `);
 
       const modeBreakdown = await db.query(`
         SELECT 
@@ -509,8 +503,8 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
           COALESCE(SUM(CASE WHEN payment_mode = 'upi' THEN amount WHEN payment_mode = 'both' THEN upi_amount ELSE 0 END), 0) as upi_total,
           COALESCE(SUM(CASE WHEN payment_mode = 'cheque' THEN amount ELSE 0 END), 0) as cheque_total
         FROM collections 
-        WHERE date >= $1 AND date <= $2
-      `, [startOfDay, endOfDay]);
+        WHERE date::date = CURRENT_DATE
+      `);
 
       res.json({
         today_total: todayTotal.rows[0].total,
