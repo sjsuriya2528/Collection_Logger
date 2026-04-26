@@ -21,9 +21,22 @@ cloudinary.config({
 });
 
 // Firebase Admin Setup
+let serviceAccount = null;
 const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
-if (fs.existsSync(serviceAccountPath)) {
-  const serviceAccount = require(serviceAccountPath);
+
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    console.log('✅ Firebase Service Account loaded from Env Var');
+  } catch (err) {
+    console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', err);
+  }
+} else if (fs.existsSync(serviceAccountPath)) {
+  serviceAccount = require(serviceAccountPath);
+  console.log('✅ Firebase Service Account loaded from file');
+}
+
+if (serviceAccount) {
   try {
     const admin = require('firebase-admin');
     admin.initializeApp({
@@ -35,7 +48,7 @@ if (fs.existsSync(serviceAccountPath)) {
     console.error('❌ Firebase Init Error:', err);
   }
 } else {
-  console.log('⚠️ Firebase service account file not found. Notifications will be skipped.');
+  console.log('⚠️ Firebase service account not found (Env or File). Notifications will be skipped.');
 }
 
 // Notification Helper

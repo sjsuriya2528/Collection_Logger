@@ -71,7 +71,7 @@ class NotificationService {
       if (userToken == null) return;
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/auth/register-fcm-token'),
+        Uri.parse('${ApiService.baseUrl}/api/auth/register-fcm-token'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $userToken',
