@@ -12,6 +12,10 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
+pool.on('connect', (client) => {
+  client.query("SET TIME ZONE 'Asia/Kolkata'");
+});
+
 module.exports = {
   query: (text, params) => pool.query(text, params),
 };

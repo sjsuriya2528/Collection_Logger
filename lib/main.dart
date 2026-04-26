@@ -19,12 +19,17 @@ void main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
-  try {
-    await Firebase.initializeApp();
-    await NotificationService.initialize();
-  } catch (e) {
-    print('Firebase initialization failed: $e');
+  // Only initialize Firebase on Mobile (Android/iOS)
+  // Firebase FCM is not supported on Windows Desktop natively via this plugin
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      await Firebase.initializeApp();
+      await NotificationService.initialize();
+    } catch (e) {
+      print('Firebase initialization failed: $e');
+    }
   }
+
   runApp(
     MultiProvider(
       providers: [
@@ -83,7 +88,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
       
       if (authProvider.user!.isAdmin) {
-        NotificationService.registerDeviceToken();
+        if (Platform.isAndroid || Platform.isIOS) {
+          NotificationService.registerDeviceToken();
+        }
         return const AdminDashboard();
       } else {
         return const EmployeeDashboard();
