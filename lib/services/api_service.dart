@@ -4,6 +4,10 @@ import '../models/user.dart';
 import '../models/collection.dart';
 
 class ApiService {
+  // Use this for local testing (Ensure phone and PC are on same Wi-Fi)
+  //static const String baseUrl = 'http://172.19.75.227:3000';
+  
+  // Use this for production
   static const String baseUrl = 'https://collection.acmagencies.store';
 
   static String getImageUrl(String path) {

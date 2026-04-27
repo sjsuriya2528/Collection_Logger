@@ -269,9 +269,9 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          _buildTextField(controller: bill.billNoController, label: 'Bill Number', icon: Icons.numbers_rounded),
+          _buildTextField(controller: bill.billNoController, label: 'Bill Number', icon: Icons.numbers_rounded, keyboardType: TextInputType.phone, isRequired: false),
           const SizedBox(height: 16),
-          _buildTextField(controller: bill.amountController, label: 'Amount Collected', icon: Icons.currency_rupee_rounded, keyboardType: TextInputType.number, onChanged: (v) => setState(() {})),
+          _buildTextField(controller: bill.amountController, label: 'Amount Collected', icon: Icons.currency_rupee_rounded, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (v) => setState(() {})),
           const SizedBox(height: 24),
           _buildSectionTitle('PAYMENT MODE', Icons.payments_rounded),
           const SizedBox(height: 12),
@@ -279,14 +279,14 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
           if (bill.mode == PaymentMode.both) ...[
             const SizedBox(height: 16),
             Row(children: [
-              Expanded(child: _buildTextField(controller: bill.cashController, label: 'Cash', icon: Icons.money, keyboardType: TextInputType.number, onChanged: (v) {
+              Expanded(child: _buildTextField(controller: bill.cashController, label: 'Cash', icon: Icons.money, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (v) {
                 double c = double.tryParse(v) ?? 0;
                 double u = double.tryParse(bill.upiController.text) ?? 0;
                 bill.amountController.text = (c + u).toString();
                 setState(() {});
               })),
               const SizedBox(width: 12),
-              Expanded(child: _buildTextField(controller: bill.upiController, label: 'UPI', icon: Icons.qr_code_rounded, keyboardType: TextInputType.number, onChanged: (v) {
+              Expanded(child: _buildTextField(controller: bill.upiController, label: 'UPI', icon: Icons.qr_code_rounded, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (v) {
                 double u = double.tryParse(v) ?? 0;
                 double c = double.tryParse(bill.cashController.text) ?? 0;
                 bill.amountController.text = (c + u).toString();
@@ -394,6 +394,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     Function(String)? onChanged,
+    bool isRequired = true,
     bool isReadOnly = false,
   }) {
     return TextFormField(
@@ -418,7 +419,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
         filled: true,
         fillColor: Colors.white.withOpacity(0.05),
       ),
-      validator: (value) => value!.isEmpty ? 'Field required' : null,
+      validator: isRequired ? (value) => value!.isEmpty ? 'Field required' : null : null,
     );
   }
 

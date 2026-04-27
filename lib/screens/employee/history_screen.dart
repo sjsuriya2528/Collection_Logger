@@ -450,11 +450,8 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                     if (isExpanded) _expandedGroups.remove(groupId);
                     else _expandedGroups.add(groupId);
                   });
-                } else {
-                  _showEditBottomSheet(first);
                 }
               },
-              onLongPress: () => _showEditBottomSheet(first),
               borderRadius: BorderRadius.circular(24),
               splashColor: Colors.cyanAccent.withOpacity(0.1),
               highlightColor: Colors.cyanAccent.withOpacity(0.05),
@@ -462,16 +459,41 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.cyanAccent.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        isGroup ? Icons.layers_rounded : Icons.storefront_rounded, 
-                        color: Colors.cyanAccent
-                      ),
+                    Column(
+                      children: [
+                        if (!isGroup) 
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.greenAccent.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.greenAccent.withOpacity(0.5), width: 0.5),
+                              ),
+                              child: Text(
+                                first.paymentMode.name.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.greenAccent, 
+                                  fontSize: 7, 
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.cyanAccent.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            isGroup ? Icons.layers_rounded : Icons.storefront_rounded, 
+                            color: Colors.cyanAccent
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -530,11 +552,10 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(
-                          '₹${totalGroupAmount.toInt()}',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                        ),
-                        if (isGroup)
+                        const SizedBox(height: 4),
+                        if (!isGroup && first.status.toLowerCase() == 'completed')
+                          _buildStatusIcon(true)
+                        else if (isGroup)
                           Icon(
                             isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
                             color: Colors.cyanAccent,
@@ -597,21 +618,8 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                   runSpacing: 4,
                   children: [
                     Text('Bill #${coll.billNo}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: coll.status == 'completed' ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        coll.status.toUpperCase(),
-                        style: TextStyle(
-                          color: coll.status == 'completed' ? Colors.greenAccent : Colors.orangeAccent,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                    if (coll.status.toLowerCase() == 'completed')
+                      _buildStatusIcon(false),
                   ],
                 ),
                 Text(
@@ -734,7 +742,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                     const SizedBox(height: 8),
                     const Text('Update your collection details', style: TextStyle(color: Colors.white38, fontSize: 14)),
                     const SizedBox(height: 32),
-                    _buildStyledEditField(billController, 'Bill Number', Icons.receipt_long_rounded),
+                    _buildStyledEditField(billController, 'Bill Number', Icons.receipt_long_rounded, isNumber: true),
                     const SizedBox(height: 16),
                     _buildStyledEditField(shopController, 'Shop Name', Icons.storefront_rounded),
                     const SizedBox(height: 16),
@@ -911,7 +919,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
       controller: controller,
       readOnly: isReadOnly,
       onChanged: onChanged,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      keyboardType: isNumber ? TextInputType.phone : TextInputType.text,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
@@ -967,6 +975,22 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusIcon(bool isLarge) {
+    return Container(
+      padding: EdgeInsets.all(isLarge ? 4 : 2),
+      decoration: BoxDecoration(
+        color: Colors.green.withOpacity(0.15),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 1),
+      ),
+      child: Icon(
+        Icons.check_rounded,
+        color: Colors.greenAccent,
+        size: isLarge ? 14 : 10,
       ),
     );
   }

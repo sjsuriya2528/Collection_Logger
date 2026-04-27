@@ -251,6 +251,7 @@ const ensureColumns = async () => {
     `);
     
     // Safe Migrations
+    await db.query('ALTER TABLE collections ALTER COLUMN bill_no DROP NOT NULL');
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'partial\'');
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS cash_amount DECIMAL DEFAULT 0');
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS upi_amount DECIMAL DEFAULT 0');
@@ -485,14 +486,15 @@ app.post('/api/collections', authenticateToken, upload.fields([
       if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
     }
 
+    const billText = bill_no ? `Bill #${bill_no}` : 'No Bill No';
     sendAdminNotification(
       'New Collection Added',
-      `${req.user.name || 'An employee'} added Bill #${bill_no} for ${shop_name} (₹${amount})`
+      `${req.user.name || 'An employee'} added ${billText} for ${shop_name} (₹${amount})`
     );
 
     await db.query(
       'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
-      ['add', req.user.name || 'An employee', `Bill #${bill_no} for ${shop_name} (₹${amount})`]
+      ['add', req.user.name || 'An employee', `${billText} for ${shop_name} (₹${amount})`]
     );
 
     res.status(201).json({ message: 'Collection synced', bill_proof: billProofUrl, payment_proof: paymentProofUrl });
@@ -625,11 +627,12 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
       if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
     }
 
-    sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated Bill #${bill_no} for ${shop_name}`);
+    const billText = bill_no ? `Bill #${bill_no}` : 'No Bill No';
+    sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated ${billText} for ${shop_name}`);
     
     await db.query(
       'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
-      ['edit', req.user.name || 'An employee', `Bill #${bill_no} for ${shop_name}`]
+      ['edit', req.user.name || 'An employee', `${billText} for ${shop_name}`]
     );
 
     res.json(result.rows[0]);
@@ -663,14 +666,15 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
       if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
     }
 
+    const billText = deletedRecord.bill_no ? `Bill #${deletedRecord.bill_no}` : 'No Bill No';
     sendAdminNotification(
       'Collection Deleted', 
-      `${req.user.name || 'An employee'} deleted Bill #${deletedRecord.bill_no} for ${deletedRecord.shop_name}`
+      `${req.user.name || 'An employee'} deleted ${billText} for ${deletedRecord.shop_name}`
     );
 
     await db.query(
       'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
-      ['delete', req.user.name || 'An employee', `Bill #${deletedRecord.bill_no} for ${deletedRecord.shop_name}`]
+      ['delete', req.user.name || 'An employee', `${billText} for ${deletedRecord.shop_name}`]
     );
 
     res.json({ message: 'Deleted successfully' });
