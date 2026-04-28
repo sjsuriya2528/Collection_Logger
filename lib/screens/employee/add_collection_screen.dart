@@ -36,7 +36,6 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _shopController = TextEditingController();
   final List<BillEntry> _bills = [BillEntry()];
-  String? _sharedPaymentProof;
   bool _isSubmitting = false;
   final _picker = ImagePicker();
 
@@ -64,14 +63,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     }
   }
 
-  bool _needsSharedPaymentProof() {
-    final proofRequiredBills = _bills.where((b) => b.mode != PaymentMode.cash).toList();
-    return proofRequiredBills.length > 1;
-  }
-
   bool _isMixedModes() {
-    // We no longer restrict mixed modes from using unified proof, 
-    // but we keep this for specific UI checks if needed.
     return false; 
   }
 
@@ -130,10 +122,6 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
       for (var bill in _bills) {
         String? billProof = bill.billProof;
         String? paymentProof = bill.paymentProof;
-        
-        if (_needsSharedPaymentProof() && (bill.mode == PaymentMode.upi || bill.mode == PaymentMode.cheque || bill.mode == PaymentMode.both)) {
-          paymentProof = _sharedPaymentProof;
-        }
 
         final collection = Collection(
           id: const Uuid().v4(),
@@ -218,8 +206,6 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                 ),
               ),
               
-              const SizedBox(height: 24),
-              _buildProofSection(),
               const SizedBox(height: 40),
               
               SizedBox(
@@ -298,43 +284,101 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
           _buildSectionTitle('BILL STATUS', Icons.check_circle_outline_rounded),
           const SizedBox(height: 12),
           _buildStatusSelector(bill),
-          if (_isMixedModes() || bill.status == 'Completed' || (bill.mode != PaymentMode.cash && !_needsSharedPaymentProof()))
-            _buildIndividualBillProofs(bill),
+          _buildIndividualBillProofs(index, bill),
         ],
       ),
     );
   }
 
-  Widget _buildIndividualBillProofs(BillEntry bill) {
+  void _showLinkDialog(int sourceIndex, String path, bool isPaymentProof) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        List<int> selectedIndices = [];
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1A1A2E),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Colors.white10)),
+              title: Text('Link proof to other bills', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _bills.length,
+                  itemBuilder: (context, i) {
+                    if (i == sourceIndex) return const SizedBox.shrink();
+                    // For payment proof, only show bills that aren't cash
+                    if (isPaymentProof && _bills[i].mode == PaymentMode.cash) return const SizedBox.shrink();
+                    
+                    return CheckboxListTile(
+                      title: Text('Bill #${i + 1} (${_bills[i].billNoController.text.isEmpty ? "No Bill #" : _bills[i].billNoController.text})', style: TextStyle(color: Colors.white70)),
+                      value: selectedIndices.contains(i),
+                      activeColor: Colors.cyanAccent,
+                      checkColor: const Color(0xFF1A1A2E),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          if (val == true) selectedIndices.add(i);
+                          else selectedIndices.remove(i);
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: Text('CANCEL', style: TextStyle(color: Colors.white38))),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent, foregroundColor: const Color(0xFF1A1A2E)),
+                  onPressed: () {
+                    setState(() {
+                      for (var i in selectedIndices) {
+                        if (isPaymentProof) _bills[i].paymentProof = path;
+                        else _bills[i].billProof = path;
+                      }
+                    });
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Linked proof to ${selectedIndices.length} bills'), backgroundColor: Colors.cyanAccent));
+                  },
+                  child: Text('APPLY'),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+  }
+
+
+  Widget _buildIndividualBillProofs(int index, BillEntry bill) {
     bool showBillProof = bill.status == 'Completed';
-    bool showPaymentProof = bill.mode != PaymentMode.cash && (!_needsSharedPaymentProof() || _isMixedModes());
+    bool showPaymentProof = bill.mode != PaymentMode.cash;
     if (!showBillProof && !showPaymentProof) return const SizedBox.shrink();
     return Column(
       children: [
         const SizedBox(height: 24),
-        _buildSectionTitle('BILL PROOFS', Icons.camera_alt_rounded),
+        _buildSectionTitle('PROOFS', Icons.camera_alt_rounded),
         const SizedBox(height: 12),
         Row(children: [
-          if (showBillProof) Expanded(child: _buildProofButton(label: 'Bill Photo', file: bill.billProof != null ? File(bill.billProof!) : null, onTap: () => _pickImage((path) => setState(() => bill.billProof = path)))),
+          if (showBillProof) Expanded(child: _buildProofButton(
+            label: 'Bill Photo', 
+            file: bill.billProof != null ? File(bill.billProof!) : null, 
+            onTap: () => _pickImage((path) => setState(() => bill.billProof = path)),
+            onLink: bill.billProof == null ? null : () => _showLinkDialog(index, bill.billProof!, false),
+          )),
           if (showBillProof && showPaymentProof) const SizedBox(width: 12),
-          if (showPaymentProof) Expanded(child: _buildProofButton(label: 'Payment Proof', file: bill.paymentProof != null ? File(bill.paymentProof!) : null, onTap: () => _pickImage((path) => setState(() => bill.paymentProof = path)))),
+          if (showPaymentProof) Expanded(child: _buildProofButton(
+            label: 'Payment Proof', 
+            file: bill.paymentProof != null ? File(bill.paymentProof!) : null, 
+            onTap: () => _pickImage((path) => setState(() => bill.paymentProof = path)),
+            onLink: bill.paymentProof == null ? null : () => _showLinkDialog(index, bill.paymentProof!, true),
+          )),
         ]),
       ],
     );
   }
 
-  Widget _buildProofSection() {
-    bool needsSharedPayment = _needsSharedPaymentProof() && !_isMixedModes();
-    if (!needsSharedPayment) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('SHARED PAYMENT PROOF', Icons.qr_code_scanner_rounded),
-        const SizedBox(height: 12),
-        _buildProofButton(label: 'Unified Payment Proof', file: _sharedPaymentProof != null ? File(_sharedPaymentProof!) : null, onTap: () => _pickImage((path) => setState(() => _sharedPaymentProof = path))),
-      ],
-    );
-  }
 
   Widget _buildModeSelector(BillEntry bill) => Container(
     decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
@@ -423,45 +467,68 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     );
   }
 
-  Widget _buildProofButton({required String label, File? file, required VoidCallback onTap}) {
+  Widget _buildProofButton({required String label, File? file, required VoidCallback onTap, VoidCallback? onLink}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.03),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: Colors.white.withOpacity(0.1), style: BorderStyle.solid),
         ),
-        child: Row(
+        child: Column(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: file != null ? Colors.green.withOpacity(0.1) : Colors.cyanAccent.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                file != null ? Icons.check_circle_rounded : Icons.add_a_photo_rounded,
-                color: file != null ? Colors.greenAccent : Colors.cyanAccent,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                  Text(
-                    file != null ? 'Screenshot selected' : 'Tap to upload screenshot',
-                    style: TextStyle(color: file != null ? Colors.greenAccent : Colors.white38, fontSize: 12),
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: file != null ? Colors.green.withOpacity(0.1) : Colors.cyanAccent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
-              ),
+                  child: Icon(
+                    file != null ? Icons.check_circle_rounded : Icons.add_a_photo_rounded,
+                    color: file != null ? Colors.greenAccent : Colors.cyanAccent,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      Text(
+                        file != null ? 'Selected' : 'Tap to upload',
+                        style: TextStyle(color: file != null ? Colors.greenAccent : Colors.white38, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            if (file != null) const Icon(Icons.edit_rounded, color: Colors.white24, size: 16),
+            if (file != null && onLink != null) ...[
+              const SizedBox(height: 8),
+              const Divider(color: Colors.white10, height: 1),
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: onLink,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.link_rounded, color: Colors.cyanAccent, size: 14),
+                      const SizedBox(width: 4),
+                      Text('LINK TO OTHERS', style: TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                    ],
+                  ),
+                ),
+              ),
+            ]
           ],
         ),
       ),
