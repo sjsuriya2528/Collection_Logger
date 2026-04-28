@@ -184,8 +184,10 @@ class PdfService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (pw.Context context) {
-          return [
-            // Header
+          final List<pw.Widget> widgets = [];
+
+          // Header
+          widgets.add(
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
@@ -206,82 +208,86 @@ class PdfService {
                 ),
               ],
             ),
-            pw.Divider(thickness: 2, color: PdfColors.blue900, height: 32),
+          );
+          widgets.add(pw.Divider(thickness: 2, color: PdfColors.blue900, height: 32));
 
-            ...grouped.entries.map((entry) {
-              final empName = entry.key;
-              final items = entry.value;
-              final stats = calculateStats(items);
+          for (var entry in grouped.entries) {
+            final empName = entry.key;
+            final items = entry.value;
+            final stats = calculateStats(items);
 
-              return pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.SizedBox(height: 20),
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(12),
-                    decoration: const pw.BoxDecoration(color: PdfColors.grey50),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+            // Employee Summary Header
+            widgets.add(pw.SizedBox(height: 20));
+            widgets.add(
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: const pw.BoxDecoration(color: PdfColors.grey50),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text('Employee: $empName', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                    pw.SizedBox(height: 12),
+                    pw.Row(
                       children: [
-                        pw.Text('Employee: $empName', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-                        pw.SizedBox(height: 12),
-                        pw.Row(
-                          children: [
-                            _buildStatBox('Total', 'Rs. ${stats['total']!.toStringAsFixed(2)}', PdfColors.green900),
-                            pw.SizedBox(width: 8),
-                            _buildStatBox('Daily Avg', 'Rs. ${stats['daily']!.toStringAsFixed(2)}', PdfColors.blue900),
-                            pw.SizedBox(width: 8),
-                            _buildStatBox('Weekly Avg', 'Rs. ${stats['weekly']!.toStringAsFixed(2)}', PdfColors.orange900),
-                            pw.SizedBox(width: 8),
-                            _buildStatBox('Monthly Avg', 'Rs. ${stats['monthly']!.toStringAsFixed(2)}', PdfColors.purple900),
-                          ],
-                        ),
+                        _buildStatBox('Total', 'Rs. ${stats['total']!.toStringAsFixed(2)}', PdfColors.green900),
+                        pw.SizedBox(width: 8),
+                        _buildStatBox('Daily Avg', 'Rs. ${stats['daily']!.toStringAsFixed(2)}', PdfColors.blue900),
+                        pw.SizedBox(width: 8),
+                        _buildStatBox('Weekly Avg', 'Rs. ${stats['weekly']!.toStringAsFixed(2)}', PdfColors.orange900),
+                        pw.SizedBox(width: 8),
+                        _buildStatBox('Monthly Avg', 'Rs. ${stats['monthly']!.toStringAsFixed(2)}', PdfColors.purple900),
                       ],
                     ),
-                  ),
-                  pw.SizedBox(height: 8),
-                  pw.Table(
-                    border: pw.TableBorder.all(color: PdfColors.grey300),
-                    columnWidths: {
-                      0: const pw.FlexColumnWidth(1.5),
-                      1: const pw.FlexColumnWidth(2.5),
-                      2: const pw.FlexColumnWidth(2.5),
-                      3: const pw.FlexColumnWidth(1.2),
-                      4: const pw.FlexColumnWidth(1.5),
-                    },
+                  ],
+                ),
+              ),
+            );
+            widgets.add(pw.SizedBox(height: 8));
+
+            // Employee Table
+            widgets.add(
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey300),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(1.5),
+                  1: const pw.FlexColumnWidth(2.5),
+                  2: const pw.FlexColumnWidth(2.5),
+                  3: const pw.FlexColumnWidth(1.2),
+                  4: const pw.FlexColumnWidth(1.5),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.grey100),
                     children: [
-                      pw.TableRow(
-                        decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-                        children: [
-                          _tableCell('Date', isHeader: true),
-                          _tableCell('Shop Name', isHeader: true),
-                          _tableCell('Bill No', isHeader: true),
-                          _tableCell('Mode', isHeader: true),
-                          _tableCell('Amount', isHeader: true),
-                        ],
-                      ),
-                      ...items.map((i) {
-                        final dateStr = i['date'].toString();
-                        final date = DateTime.parse(dateStr.contains('Z') || dateStr.contains('+') ? dateStr : "${dateStr}Z");
-                        final billNo = i['bill_no']?.toString() ?? '-';
-                        final statusText = i['status']?.toString().toLowerCase() == 'completed' ? ' (Completed)' : '';
-                        
-                        return pw.TableRow(
-                          children: [
-                            _tableCell(DateFormat('dd-MM-yy').format(date.toLocal())),
-                            _tableCell(i['shop_name'].toString()),
-                            _tableCell('$billNo$statusText'),
-                            _tableCell(i['payment_mode'].toString().toUpperCase()),
-                            _tableCell('Rs. ${i['amount']}'),
-                          ],
-                        );
-                      }).toList(),
+                      _tableCell('Date', isHeader: true),
+                      _tableCell('Shop Name', isHeader: true),
+                      _tableCell('Bill No', isHeader: true),
+                      _tableCell('Mode', isHeader: true),
+                      _tableCell('Amount', isHeader: true),
                     ],
                   ),
+                  ...items.map((i) {
+                    final dateStr = i['date'].toString();
+                    final date = DateTime.parse(dateStr.contains('Z') || dateStr.contains('+') ? dateStr : "${dateStr}Z");
+                    final billNo = i['bill_no']?.toString() ?? '-';
+                    final statusText = i['status']?.toString().toLowerCase() == 'completed' ? ' (Completed)' : '';
+                    
+                    return pw.TableRow(
+                      children: [
+                        _tableCell(DateFormat('dd-MM-yy').format(date.toLocal())),
+                        _tableCell(i['shop_name'].toString()),
+                        _tableCell('$billNo$statusText'),
+                        _tableCell(i['payment_mode'].toString().toUpperCase()),
+                        _tableCell('Rs. ${i['amount']}'),
+                      ],
+                    );
+                  }).toList(),
                 ],
-              );
-            }).toList(),
-          ];
+              ),
+            );
+          }
+
+          return widgets;
         },
       ),
     );
