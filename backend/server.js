@@ -586,6 +586,21 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
     }
 });
 
+app.get('/api/admin/collections', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+  try {
+    const result = await db.query(`
+      SELECT c.*, u.name as employee_name
+      FROM collections c
+      JOIN users u ON c.employee_id = u.id
+      ORDER BY c.date DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/collections/employee/:id', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
   try {

@@ -280,4 +280,21 @@ class ApiService {
       throw Exception('Failed to load admin dashboard');
     }
   }
+
+  static Future<List<dynamic>> getAllCollections(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/admin/collections'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed to load all collections');
+      }
+    } catch (e) {
+      print('Get All Collections Error: $e');
+      rethrow;
+    }
+  }
 }

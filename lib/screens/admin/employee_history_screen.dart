@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../providers/auth_provider.dart';
 import 'package:provider/provider.dart';
 import '../../services/pdf_service.dart';
+import '../common/pdf_preview_screen.dart';
 
 class EmployeeHistoryScreen extends StatefulWidget {
   final String employeeId;
@@ -156,12 +157,24 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
               );
 
               try {
-                await PdfService.generateEmployeeReport(
+                final pdf = await PdfService.generateEmployeeReport(
                   employeeName: widget.employeeName,
                   collections: filtered,
                   startDate: _startDate,
                   endDate: _endDate,
                 );
+
+                if (mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PdfPreviewScreen(
+                        pdf: pdf,
+                        fileName: '${widget.employeeName}_Report.pdf',
+                      ),
+                    ),
+                  );
+                }
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -444,15 +457,31 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        const SizedBox(height: 4),
-                        if (!isGroup && (first['status'] ?? 'partial') == 'completed')
+                        // Status Icon at Top Right (Only for single records)
+                        if (!isGroup && (first['status'] ?? 'partial').toString().toLowerCase().trim() == 'completed')
                           _buildStatusIcon(true)
-                        else if (isGroup)
+                        else
+                          const SizedBox(height: 24), // Placeholder for alignment
+
+                        const SizedBox(height: 4),
+                        // Total Amount
+                        Text(
+                          '₹${totalGroupAmount.toInt()}',
+                          style: const TextStyle(
+                            color: Colors.cyanAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+
+                        if (isGroup) ...[
+                          const SizedBox(height: 4),
                           Icon(
                             isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                            color: Colors.cyanAccent,
+                            color: Colors.white38,
                             size: 20,
                           ),
+                        ],
                       ],
                     ),
                   ],
@@ -497,50 +526,67 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Colors.white10, width: 0.5)),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  runSpacing: 4,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Bill #${coll['bill_no']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
-                    if ((coll['status'] ?? 'partial') == 'completed')
-                      _buildStatusIcon(false),
+                    const SizedBox(height: 2),
+                    Text(
+                      coll['payment_mode'].toString().toLowerCase() == 'both'
+                        ? 'Mode: BOTH (Cash: ₹${(double.tryParse(coll['cash_amount'].toString()) ?? 0).toInt()} + UPI: ₹${(double.tryParse(coll['upi_amount'].toString()) ?? 0).toInt()})'
+                        : 'Mode: ${coll['payment_mode'].toString().toUpperCase()}',
+                      style: const TextStyle(color: Colors.white38, fontSize: 11),
+                      softWrap: true,
+                    ),
                   ],
                 ),
-                Text(
-                  coll['payment_mode'].toString().toLowerCase() == 'both'
-                    ? 'Mode: BOTH (Cash: ₹${(double.tryParse(coll['cash_amount'].toString()) ?? 0).toInt()} + UPI: ₹${(double.tryParse(coll['upi_amount'].toString()) ?? 0).toInt()})'
-                    : 'Mode: ${coll['payment_mode'].toString().toUpperCase()} • ₹${(double.tryParse(coll['amount'].toString()) ?? 0).toInt()}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                  softWrap: true,
-                ),
+              ),
+              const SizedBox(width: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if ((coll['status'] ?? 'partial').toString().toLowerCase().trim() == 'completed')
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: _buildStatusIcon(false),
+                    ),
+                  Text(
+                    '₹${(double.tryParse(coll['amount'].toString()) ?? 0).toInt()}',
+                    style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (coll['bill_proof'] != null) _buildProofChip('BILL', coll['bill_proof']),
+              if (coll['payment_proof'] != null && coll['payment_proof'] != sharedPaymentProof) ...[ 
+                const SizedBox(width: 8),
+                _buildProofChip('PAY', coll['payment_proof']),
               ],
-            ),
-          ),
-          if (coll['bill_proof'] != null) _buildProofChip('BILL', coll['bill_proof']),
-          if (coll['payment_proof'] != null && coll['payment_proof'] != sharedPaymentProof) ...[ 
-            const SizedBox(width: 8),
-            _buildProofChip('PAY', coll['payment_proof']),
-          ],
-          const SizedBox(width: 8),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.edit_rounded, size: 16, color: Colors.white38),
-            onPressed: () => _showEditDialog(coll),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
-            onPressed: () => _confirmDelete(coll),
+              const Spacer(),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.edit_rounded, size: 18, color: Colors.white38),
+                onPressed: () => _showEditDialog(coll),
+              ),
+              const SizedBox(width: 16),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent.withOpacity(0.7)),
+                onPressed: () => _confirmDelete(coll),
+              ),
+            ],
           ),
         ],
       ),

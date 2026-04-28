@@ -10,6 +10,7 @@ import '../../services/notification_service.dart';
 import 'package:local_notifier/local_notifier.dart';
 import 'employee_history_screen.dart';
 import 'dart:io';
+import 'all_collections_history_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -212,6 +213,32 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             ),
           ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF16213E),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -5)),
+          ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AllCollectionsHistoryScreen()),
+          ),
+          icon: const Icon(Icons.history_rounded),
+          label: const Text('COLLECTION HISTORY', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.cyanAccent,
+            foregroundColor: const Color(0xFF1A1A2E),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            elevation: 8,
+            shadowColor: Colors.cyanAccent.withOpacity(0.3),
+          ),
+        ),
+      ),
     );
   }
   Widget _buildHeader(String name) {
