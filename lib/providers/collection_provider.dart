@@ -123,8 +123,16 @@ class CollectionProvider with ChangeNotifier {
       String? bp = collection.billProof;
       String? pp = collection.paymentProof;
       bool mod = false;
-      if (bp != null && sessionFiles.containsKey(bp)) { bp = sessionFiles[bp]; mod = true; }
-      if (pp != null && sessionFiles.containsKey(pp)) { pp = sessionFiles[pp]; mod = true; }
+      if (bp != null && sessionFiles.containsKey(bp)) { 
+        print('Sync: Reusing URL for Bill Proof: $bp');
+        bp = sessionFiles[bp]; 
+        mod = true; 
+      }
+      if (pp != null && sessionFiles.containsKey(pp)) { 
+        print('Sync: Reusing URL for Payment Proof: $pp');
+        pp = sessionFiles[pp]; 
+        mod = true; 
+      }
       if (mod) {
         toSync = Collection.fromMap({...collection.toMap(), 'bill_proof': bp, 'payment_proof': pp});
       }
@@ -136,11 +144,17 @@ class CollectionProvider with ChangeNotifier {
       
       // 2. Record the server URLs in sessionFiles to avoid re-uploading same file
       if (sessionFiles != null) {
-        if (collection.billProof != null && response['bill_proof'] != null) {
-          sessionFiles[collection.billProof!] = response['bill_proof'];
+        // Check both underscore and camelCase to be safe
+        String? serverBillUrl = response['bill_proof'] ?? response['billProof'];
+        String? serverPaymentUrl = response['payment_proof'] ?? response['paymentProof'];
+
+        if (collection.billProof != null && serverBillUrl != null) {
+          print('Sync: Cached Bill Proof URL: $serverBillUrl');
+          sessionFiles[collection.billProof!] = serverBillUrl;
         }
-        if (collection.paymentProof != null && response['payment_proof'] != null) {
-          sessionFiles[collection.paymentProof!] = response['payment_proof'];
+        if (collection.paymentProof != null && serverPaymentUrl != null) {
+          print('Sync: Cached Payment Proof URL: $serverPaymentUrl');
+          sessionFiles[collection.paymentProof!] = serverPaymentUrl;
         }
       }
 
