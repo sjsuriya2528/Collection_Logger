@@ -632,23 +632,38 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
     if (status !== 'completed') billProofUrl = null;
     if (payment_mode !== 'upi' && payment_mode !== 'both') paymentProofUrl = null;
 
+    // Change Detection: Compare old vs new
+    const old = ownerCheck.rows[0];
+    const hasChanged = 
+      old.bill_no !== bill_no ||
+      old.shop_name !== shop_name ||
+      parseFloat(old.amount) !== parseFloat(amount) ||
+      old.payment_mode !== payment_mode ||
+      old.status !== status ||
+      old.bill_proof !== billProofUrl ||
+      old.payment_proof !== paymentProofUrl ||
+      parseFloat(old.cash_amount || 0) !== parseFloat(cash_amount || 0) ||
+      parseFloat(old.upi_amount || 0) !== parseFloat(upi_amount || 0);
+
     const result = await db.query(
       'UPDATE collections SET bill_no = $1, shop_name = $2, amount = $3, payment_mode = $4, status = $5, bill_proof = $6, payment_proof = $7, cash_amount = $8, upi_amount = $9 WHERE id = $10 RETURNING *',
       [bill_no, shop_name, parseFloat(amount), payment_mode, status || 'partial', billProofUrl, paymentProofUrl, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), id]
     );
 
-    if (!req.user.name) {
-      const userRes = await db.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
-      if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
-    }
+    if (hasChanged) {
+      if (!req.user.name) {
+        const userRes = await db.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+        if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
+      }
 
-    const billText = bill_no ? `Bill #${bill_no}` : 'No Bill No';
-    sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated ${billText} for ${shop_name}`);
-    
-    await db.query(
-      'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
-      ['edit', req.user.name || 'An employee', `${billText} for ${shop_name}`]
-    );
+      const billText = bill_no ? `Bill #${bill_no}` : 'No Bill No';
+      sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated ${billText} for ${shop_name}`);
+      
+      await db.query(
+        'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
+        ['edit', req.user.name || 'An employee', `${billText} for ${shop_name}`]
+      );
+    }
 
     res.json(result.rows[0]);
   } catch (err) {

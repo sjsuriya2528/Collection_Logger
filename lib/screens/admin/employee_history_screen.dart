@@ -1021,7 +1021,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                           child: GestureDetector(
                             onTap: () => setModalState(() {
                               mode = m;
-                              if (m != 'upi' && m != 'both') paymentProof = null;
+                              if (m != 'upi' && m != 'both' && m != 'cheque') paymentProof = null;
                               if (m != 'both') {
                                 cashController.text = '0';
                                 upiController.text = '0';
@@ -1085,9 +1085,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    if (mode == 'upi' || mode == 'both') ...[
+                    if (mode == 'upi' || mode == 'both' || mode == 'cheque') ...[
                       _buildEditProofButton(
-                        label: 'UPI Payment Screenshot',
+                        label: 'Payment Screenshot / Cheque Photo',
                         path: paymentProof,
                         onTap: () => pickImg(false),
                       ),
@@ -1299,6 +1299,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     final upiController = TextEditingController(text: (coll['upi_amount'] ?? 0).toString());
     String mode = coll['payment_mode'];
     String status = coll['status'] ?? 'partial';
+    String? billProof = coll['bill_proof'];
+    String? paymentProof = coll['payment_proof'];
+    final picker = ImagePicker();
 
     showModalBottomSheet(
       context: context,
@@ -1309,6 +1312,41 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
         bool isSaving = false;
         return StatefulBuilder(
           builder: (context, setModalState) {
+            Future<void> pickImg(bool isBill) async {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: const Color(0xFF1A1A2E),
+                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                builder: (context) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      leading: const Icon(Icons.photo_library_rounded, color: Colors.cyanAccent),
+                      title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800, maxHeight: 800, imageQuality: 30);
+                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.camera_alt_rounded, color: Colors.cyanAccent),
+                      title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        final picked = await picker.pickImage(source: ImageSource.camera, maxWidth: 800, maxHeight: 800, imageQuality: 30);
+                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              );
+            }
+
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -1344,10 +1382,76 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                          })),
                        ]),
                     ],
+                    
                     const SizedBox(height: 24),
-                    _buildAdminModeSelector(mode, (newMode) => setModalState(() => mode = newMode)),
+                    const Text('PAYMENT MODE', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: ['cash', 'upi', 'cheque', 'both'].map((m) {
+                          final isSel = mode == m;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(m.toUpperCase()),
+                              selected: isSel,
+                              onSelected: (s) => setModalState(() {
+                                mode = m;
+                                if (m != 'upi' && m != 'both' && m != 'cheque') paymentProof = null;
+                                if (m != 'both') {
+                                  cashController.text = '0';
+                                  upiController.text = '0';
+                                }
+                              }),
+                              backgroundColor: Colors.white.withOpacity(0.05),
+                              selectedColor: Colors.cyanAccent,
+                              labelStyle: TextStyle(color: isSel ? Colors.black : Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
                     const SizedBox(height: 24),
-                    _buildAdminStatusSelector(status, (newStatus) => setModalState(() => status = newStatus)),
+                    const Text('STATUS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: ['partial', 'completed'].map((s) {
+                        final isSel = status == s;
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () => setModalState(() {
+                              status = s;
+                              if (s != 'completed') billProof = null;
+                            }),
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isSel ? (s == 'completed' ? Colors.greenAccent : Colors.orangeAccent) : Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Center(child: Text(s.toUpperCase(), style: TextStyle(color: isSel ? const Color(0xFF1A1A2E) : Colors.white60, fontSize: 12, fontWeight: FontWeight.bold))),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+
+                    const SizedBox(height: 24),
+                    if ((status == 'completed') || (mode == 'upi' || mode == 'both' || mode == 'cheque')) ...[
+                      const Text('PROOFS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      if (status == 'completed') ...[
+                        _buildEditProofButton(label: 'Bill Proof', path: billProof, onTap: () => pickImg(true)),
+                        const SizedBox(height: 12),
+                      ],
+                      if (mode == 'upi' || mode == 'both' || mode == 'cheque') ...[
+                        _buildEditProofButton(label: 'Payment Proof', path: paymentProof, onTap: () => pickImg(false)),
+                      ],
+                    ],
+
                     const SizedBox(height: 40),
                     SizedBox(
                       width: double.infinity,
@@ -1368,18 +1472,25 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                             'amount': amountController.text,
                             'payment_mode': mode,
                             'status': status,
-                            'cash_amount': cashController.text,
-                            'upi_amount': upiController.text,
+                            'cash_amount': mode == 'both' ? cashController.text : (mode == 'cash' ? amountController.text : '0'),
+                            'upi_amount': mode == 'both' ? upiController.text : (mode == 'upi' ? amountController.text : '0'),
                           };
 
-                          final result = await ApiService.updateCollection(coll['id'], fields, auth.user!.token!);
+                          final result = await ApiService.updateCollection(
+                            coll['id'], 
+                            fields, 
+                            auth.user!.token!,
+                            billProofPath: billProof,
+                            paymentProofPath: paymentProof,
+                          );
+
                           if (result != null) {
                             _fetchHistory();
                             Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated successfully')));
+                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated successfully')));
                           } else {
                             setModalState(() => isSaving = false);
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Update failed'), backgroundColor: Colors.redAccent));
+                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Update failed'), backgroundColor: Colors.redAccent));
                           }
                         },
                         child: isSaving 
