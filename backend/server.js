@@ -1,4 +1,8 @@
 process.env.TZ = 'Asia/Kolkata';
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
