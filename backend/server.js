@@ -184,7 +184,10 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // Email Transporter Setup
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false, // Use STARTTLS
+  family: 4,     // Force IPv4 only to avoid ENETUNREACH on IPv6
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
