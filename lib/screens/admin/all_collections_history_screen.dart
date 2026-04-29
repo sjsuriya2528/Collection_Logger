@@ -50,7 +50,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
       final date = DateTime.parse(c['date']);
       bool matchesDate = true;
       if (_startDate != null && _endDate != null) {
-        matchesDate = date.isAfter(_startDate!.subtract(const Duration(days: 1))) && 
+        matchesDate = !date.isBefore(_startDate!) && 
                       date.isBefore(_endDate!.add(const Duration(days: 1)));
       }
       
@@ -293,28 +293,49 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
       child: Column(
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(coll['shop_name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                        const Spacer(),
-                        Text(DateFormat('dd MMM, hh:mm a').format(date.toLocal()), style: const TextStyle(color: Colors.white30, fontSize: 10)),
-                      ],
+                    Text(
+                      coll['shop_name'], 
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const Icon(Icons.person_outline, size: 12, color: Colors.cyanAccent),
-                        const SizedBox(width: 4),
-                        Text(coll['employee_name'] ?? 'Unknown', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12)),
-                        const SizedBox(width: 12),
-                        const Icon(Icons.confirmation_number_outlined, size: 12, color: Colors.white30),
-                        const SizedBox(width: 4),
-                        Text('Bill #${coll['bill_no']}', style: const TextStyle(color: Colors.white30, fontSize: 12)),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.access_time_rounded, size: 11, color: Colors.white30),
+                            const SizedBox(width: 4),
+                            Text(
+                              DateFormat('dd MMM, hh:mm a').format(date.toLocal()), 
+                              style: const TextStyle(color: Colors.white30, fontSize: 10, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.person_outline, size: 11, color: Colors.cyanAccent),
+                            const SizedBox(width: 4),
+                            Text(coll['employee_name'] ?? 'Unknown', style: const TextStyle(color: Colors.cyanAccent, fontSize: 11)),
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.confirmation_number_outlined, size: 11, color: Colors.white30),
+                            const SizedBox(width: 4),
+                            Text('Bill #${coll['bill_no']}', style: const TextStyle(color: Colors.white30, fontSize: 11)),
+                          ],
+                        ),
                       ],
                     ),
                   ],
@@ -334,6 +355,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                       Text('₹${(double.tryParse(coll['amount'].toString()) ?? 0).toInt()}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
                     ],
                   ),
+                  const SizedBox(height: 4),
                   Text(coll['payment_mode'].toString().toUpperCase(), style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
                 ],
               ),

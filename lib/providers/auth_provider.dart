@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 
@@ -68,6 +69,20 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    try {
+      if (_user != null) {
+        String? fcmToken;
+        try {
+          final messaging = FirebaseMessaging.instance;
+          fcmToken = await messaging.getToken();
+        } catch (_) {}
+        
+        await ApiService.logout(_user!.token!, fcmToken: fcmToken);
+      }
+    } catch (e) {
+      print('Logout Error: $e');
+    }
+
     await _storage.delete(key: 'user');
     _user = null;
     notifyListeners();

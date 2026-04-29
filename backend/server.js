@@ -54,7 +54,10 @@ if (serviceAccount) {
 // Notification Helper
 const sendAdminNotification = async (title, body) => {
   const admin = app.locals.fcmAdmin;
-  if (!admin) return;
+  if (!admin) {
+    console.log('[FCM] Skipping notification: Firebase Admin not initialized');
+    return;
+  }
 
   try {
     // Get all admin tokens
@@ -66,15 +69,35 @@ const sendAdminNotification = async (title, body) => {
     `);
     
     const tokens = tokensResult.rows.map(r => r.token);
+    console.log(`[FCM] Sending notification to ${tokens.length} admin(s)`);
     if (tokens.length === 0) return;
 
     const message = {
       notification: { title, body },
+      data: {
+        title: title,
+        body: body,
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      },
       tokens: tokens,
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'admin_alerts',
+          priority: 'max',
+        }
+      }
     };
 
     const response = await admin.messaging().sendEachForMulticast(message);
-    console.log(`Successfully sent ${response.successCount} notifications`);
+    console.log(`[FCM] Sent to Google: ${response.successCount} success, ${response.failureCount} failure`);
+    if (response.failureCount > 0) {
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.error(`[FCM] Token ${idx} failed: ${resp.error.message}`);
+        }
+      });
+    }
   } catch (err) {
     console.error('Error sending push notification:', err);
   }
@@ -397,6 +420,19 @@ app.post('/api/auth/register-fcm-token', authenticateToken, async (req, res) => 
   }
 });
 
+app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+  const { token } = req.body;
+  try {
+    if (token) {
+      await db.query('DELETE FROM fcm_tokens WHERE token = $1 AND user_id = $2', [token, req.user.id]);
+      console.log(`[FCM] Unregistered token for user ${req.user.id}`);
+    }
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/auth/reset-password', async (req, res) => {
   const { email, otp, newPassword } = req.body;
   try {
@@ -487,14 +523,15 @@ app.post('/api/collections', authenticateToken, upload.fields([
     }
 
     const billText = bill_no ? `Bill #${bill_no}` : 'No Bill No';
+    const modeText = payment_mode ? payment_mode.toString().toUpperCase() : 'N/A';
     sendAdminNotification(
       'New Collection Added',
-      `${req.user.name || 'An employee'} added ${billText} for ${shop_name} (₹${amount})`
+      `${req.user.name || 'An employee'} added ${billText} for ${shop_name} via ${modeText} (₹${amount})`
     );
 
     await db.query(
       'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
-      ['add', req.user.name || 'An employee', `${billText} for ${shop_name} (₹${amount})`]
+      ['add', req.user.name || 'An employee', `${billText} for ${shop_name} via ${modeText} (₹${amount})`]
     );
 
     res.status(201).json({ message: 'Collection synced', bill_proof: billProofUrl, payment_proof: paymentProofUrl });
@@ -657,11 +694,12 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
       }
 
       const billText = bill_no ? `Bill #${bill_no}` : 'No Bill No';
-      sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated ${billText} for ${shop_name}`);
+      const modeText = payment_mode ? payment_mode.toString().toUpperCase() : 'N/A';
+      sendAdminNotification('Collection Edited', `${req.user.name || 'An employee'} updated ${billText} for ${shop_name} (${modeText})`);
       
       await db.query(
         'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
-        ['edit', req.user.name || 'An employee', `${billText} for ${shop_name}`]
+        ['edit', req.user.name || 'An employee', `${billText} for ${shop_name} (${modeText})`]
       );
     }
 

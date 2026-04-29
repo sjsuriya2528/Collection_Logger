@@ -72,10 +72,12 @@ class PdfService {
             pw.Row(
               children: [
                 _buildStatBox('Total Collected', 'Rs. ${totalAmount.toStringAsFixed(2)}', PdfColors.green900),
-                pw.SizedBox(width: 16),
-                _buildStatBox('Weekly Average', 'Rs. ${weeklyAvg.toStringAsFixed(2)}', PdfColors.blue900),
-                pw.SizedBox(width: 16),
-                _buildStatBox('Monthly Average', 'Rs. ${monthlyAvg.toStringAsFixed(2)}', PdfColors.orange900),
+                pw.SizedBox(width: 12),
+                _buildStatBox('Daily Average', 'Rs. ${dailyAvg.toStringAsFixed(2)}', PdfColors.blue900),
+                pw.SizedBox(width: 12),
+                _buildStatBox('Weekly Average', 'Rs. ${weeklyAvg.toStringAsFixed(2)}', PdfColors.orange900),
+                pw.SizedBox(width: 12),
+                _buildStatBox('Monthly Average', 'Rs. ${monthlyAvg.toStringAsFixed(2)}', PdfColors.purple900),
               ],
             ),
             pw.SizedBox(height: 32),

@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/collection_provider.dart';
 import '../../models/collection.dart';
 import '../../services/api_service.dart';
+import '../../services/notification_service.dart';
 import 'add_collection_screen.dart';
 import 'history_screen.dart';
 
@@ -23,6 +24,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
+      
+      // Register token for notifications (Ensures token is updated if role changed)
+      if (auth.user?.token != null) {
+        NotificationService.registerDeviceToken(auth.user!.token!);
+      }
+
       final collProvider = Provider.of<CollectionProvider>(context, listen: false);
       collProvider.fetchCollections(auth.user!.id, token: auth.user!.token);
       collProvider.syncAllPending(auth.user!.token!);

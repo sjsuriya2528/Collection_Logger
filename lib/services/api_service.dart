@@ -198,6 +198,21 @@ class ApiService {
     }
   }
 
+  static Future<void> logout(String token, {String? fcmToken}) async {
+    try {
+      await http.post(
+        Uri.parse('$baseUrl/api/auth/logout'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'token': fcmToken}),
+      );
+    } catch (e) {
+      print('Logout API Error: $e');
+    }
+  }
+
   static Future<List<dynamic>> getEmployeeCollections(String employeeId, String token) async {
     try {
       final response = await http.get(
