@@ -377,13 +377,14 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     try {
       await transporter.sendMail({
-        from: process.env.SMTP_USER,
+        from: `"ACM Agencies Alerts" <${process.env.SMTP_USER}>`,
         to: email,
         subject: 'Password Reset OTP',
         text: `Your OTP for password reset is: ${otp}. It expires in 10 minutes.`
       });
+      console.log(`[OTP] Sent reset code to ${email}`);
     } catch (mailErr) {
-      console.error('Nodemailer Error:', mailErr);
+      console.error('[OTP] Nodemailer Error:', mailErr.message);
       return res.status(500).json({ message: 'Error sending email', details: mailErr.message });
     }
 
@@ -458,11 +459,12 @@ app.post('/api/auth/request-change-otp', authenticateToken, async (req, res) => 
     await db.query('UPDATE users SET otp_code = $1, otp_expiry = $2 WHERE id = $3', [otp, expiry, req.user.id]);
 
     await transporter.sendMail({
-      from: process.env.SMTP_USER,
+      from: `"ACM Agencies Alerts" <${process.env.SMTP_USER}>`,
       to: email,
       subject: 'Password Change Verification',
       text: `Your OTP for changing your password is: ${otp}. It expires in 10 minutes.`
     });
+    console.log(`[OTP] Sent change code to ${email}`);
 
     res.json({ message: 'OTP sent to your registered email' });
   } catch (err) {
