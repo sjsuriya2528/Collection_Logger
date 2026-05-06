@@ -53,13 +53,8 @@ class CollectionProvider with ChangeNotifier {
   }
 
   Future<void> syncPendingCollections(String token) async {
-    final unsynced = await DatabaseHelper.instance.getUnsyncedCollections();
-    if (unsynced.isEmpty) return;
-    
-    print('Sync: Found ${unsynced.length} pending collections. Starting background sync...');
-    for (var coll in unsynced) {
-      await _syncOne(coll, token);
-    }
+    // Consolidation: Use the new robust parallel sync method
+    await syncAllPending(token);
   }
 
   Future<void> pullFromServer(String token, String employeeId) async {
@@ -114,56 +109,57 @@ class CollectionProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _syncOne(Collection collection, String token, [Map<String, String>? sessionFiles]) async {
-    print('Sync: Uploading collection ${collection.id} (Bill: ${collection.billNo})...');
+  Future<void> deleteCollection(String id) async {
+    await DatabaseHelper.instance.deleteCollection(id);
+    _collections.removeWhere((c) => c.id == id);
+    notifyListeners();
+  }
+
+  Future<void> _syncOne(
+    Collection collection, 
+    String token, 
+    Map<String, Future<String?>> uploadRegistry
+  ) async {
+    print('Sync: Processing collection ${collection.id} (Bill: ${collection.billNo})...');
     
-    // 1. Apply any already-uploaded URLs from this session
-    Collection toSync = collection;
-    if (sessionFiles != null) {
-      String? bp = collection.billProof;
-      String? pp = collection.paymentProof;
-      bool mod = false;
-      if (bp != null && sessionFiles.containsKey(bp)) { 
-        print('Sync: Reusing URL for Bill Proof: $bp');
-        bp = sessionFiles[bp]; 
-        mod = true; 
+    // Helper to upload files only once if shared across multiple records in this batch
+    Future<String?> upload(String? path, String type) async {
+      if (path == null || path.startsWith('http') || path.startsWith('/uploads')) return path;
+      
+      // If this file path is already being uploaded, wait for THAT future.
+      if (!uploadRegistry.containsKey(path)) {
+        uploadRegistry[path] = ApiService.uploadFile(path, token, type);
       }
-      if (pp != null && sessionFiles.containsKey(pp)) { 
-        print('Sync: Reusing URL for Payment Proof: $pp');
-        pp = sessionFiles[pp]; 
-        mod = true; 
-      }
-      if (mod) {
-        toSync = Collection.fromMap({...collection.toMap(), 'bill_proof': bp, 'payment_proof': pp});
-      }
+      return uploadRegistry[path];
     }
+
+    // Wait for proof uploads to complete (reusing futures if paths are identical)
+    String? bp = await upload(collection.billProof, 'bill');
+    String? pp = await upload(collection.paymentProof, 'payment');
+
+
+    // Create a version with server URLs
+    Collection toSync = collection.copyWith(billProof: bp, paymentProof: pp);
 
     final response = await ApiService.syncCollection(toSync, token);
     if (response != null) {
-      print('Sync: Successfully uploaded ${collection.id}');
+      print('Sync: Successfully synced record ${collection.id}');
       
-      // 2. Record the server URLs in sessionFiles to avoid re-uploading same file
-      if (sessionFiles != null) {
-        // Check both underscore and camelCase to be safe
-        String? serverBillUrl = response['bill_proof'] ?? response['billProof'];
-        String? serverPaymentUrl = response['payment_proof'] ?? response['paymentProof'];
+      // Persist the server URLs to the local database as well
+      await DatabaseHelper.instance.markAsSynced(
+        collection.id, 
+        billProof: bp, 
+        paymentProof: pp
+      );
 
-        if (collection.billProof != null && serverBillUrl != null) {
-          print('Sync: Cached Bill Proof URL: $serverBillUrl');
-          sessionFiles[collection.billProof!] = serverBillUrl;
-        }
-        if (collection.paymentProof != null && serverPaymentUrl != null) {
-          print('Sync: Cached Payment Proof URL: $serverPaymentUrl');
-          sessionFiles[collection.paymentProof!] = serverPaymentUrl;
-        }
-      }
-
-      await DatabaseHelper.instance.markAsSynced(collection.id);
       final index = _collections.indexWhere((c) => c.id == collection.id);
       if (index != -1) {
-        final updatedMap = _collections[index].toMap();
-        updatedMap['is_synced'] = 1;
-        _collections[index] = Collection.fromMap(updatedMap);
+        // Update the in-memory state with server URLs so "VIEW" buttons appear/work
+        _collections[index] = _collections[index].copyWith(
+          isSynced: true,
+          billProof: bp,
+          paymentProof: pp,
+        );
         notifyListeners();
       }
     } else {
@@ -178,10 +174,14 @@ class CollectionProvider with ChangeNotifier {
     final unsynced = await DatabaseHelper.instance.getUnsyncedCollections();
     if (unsynced.isEmpty) return;
 
-    print('Sync: Starting batch sync for ${unsynced.length} records...');
-    final Map<String, String> sessionFiles = {};
-    for (var coll in unsynced) {
-      await _syncOne(coll, token, sessionFiles);
-    }
+    print('Sync: Starting parallel batch sync for ${unsynced.length} records...');
+    
+    // The uploadRegistry stores the FUTURE of each unique file path's upload.
+    // Multiple records sharing the same path will wait for the same Future.
+    final Map<String, Future<String?>> uploadRegistry = {};
+    
+    await Future.wait(unsynced.map((coll) => _syncOne(coll, token, uploadRegistry)));
+    print('Sync: Batch sync completed.');
   }
+
 }

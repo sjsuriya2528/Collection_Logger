@@ -495,6 +495,17 @@ app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/api/upload', authenticateToken, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+  const folder = req.body.type === 'bill' ? 'bills' : 'payments';
+  try {
+    const url = await uploadToCloudinary(req.file.path, folder);
+    res.json({ url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- COLLECTION ENDPOINTS ---
 
 app.post('/api/collections', authenticateToken, upload.fields([
@@ -503,8 +514,8 @@ app.post('/api/collections', authenticateToken, upload.fields([
 ]), async (req, res) => {
   const { id, bill_no, shop_name, amount, payment_mode, date, status, cash_amount, upi_amount, group_id } = req.body;
   
-  let billProofUrl = null;
-  let paymentProofUrl = null;
+  let billProofUrl = req.body.bill_proof || req.body.billProof || null;
+  let paymentProofUrl = req.body.payment_proof || req.body.paymentProof || null;
 
   if (req.files && req.files['billProof']) {
     billProofUrl = await uploadToCloudinary(req.files['billProof'][0].path, 'bills');
@@ -519,7 +530,7 @@ app.post('/api/collections', authenticateToken, upload.fields([
 
     await db.query(
       'INSERT INTO collections (id, employee_id, bill_no, shop_name, amount, payment_mode, date, status, bill_proof, payment_proof, cash_amount, upi_amount, group_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
-      [id, req.user.id, bill_no, shop_name, amount, payment_mode, date, status, billProofUrl, paymentProofUrl, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), group_id]
+      [id, req.user.id, bill_no, shop_name, parseFloat(amount || 0), payment_mode, date, status, billProofUrl, paymentProofUrl, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), group_id]
     );
 
     if (!req.user.name) {
@@ -665,25 +676,28 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
   const { bill_no, shop_name, amount, payment_mode, status, cash_amount, upi_amount } = req.body;
   
   try {
-    let billProofUrl = req.body.bill_proof !== undefined ? req.body.bill_proof : ownerCheck.rows[0].bill_proof;
-    let paymentProofUrl = req.body.payment_proof !== undefined ? req.body.payment_proof : ownerCheck.rows[0].payment_proof;
+    let billProofUrl = req.body.billProof || req.body.bill_proof || ownerCheck.rows[0].bill_proof;
+    let paymentProofUrl = req.body.paymentProof || req.body.payment_proof || ownerCheck.rows[0].payment_proof;
 
     if (req.files['bill_proof']) billProofUrl = await uploadToCloudinary(req.files['bill_proof'][0].path, 'bills');
     if (req.files['payment_proof']) paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path, 'payments');
 
-    if (status !== 'completed') billProofUrl = null;
-    if (payment_mode !== 'upi' && payment_mode !== 'both') paymentProofUrl = null;
+    // Remove restrictions that were wiping proofs based on status/mode
+    // billProofUrl and paymentProofUrl should be kept if provided by the client
 
-    // Change Detection: Compare old vs new
+    // Robust Change Detection: Compare old vs new (Case-insensitive for status and mode)
     const old = ownerCheck.rows[0];
+    const clean = (val) => (val || '').toString().trim();
+    const cleanLower = (val) => clean(val).toLowerCase();
+
     const hasChanged = 
-      old.bill_no !== bill_no ||
-      old.shop_name !== shop_name ||
-      parseFloat(old.amount) !== parseFloat(amount) ||
-      old.payment_mode !== payment_mode ||
-      old.status !== status ||
-      old.bill_proof !== billProofUrl ||
-      old.payment_proof !== paymentProofUrl ||
+      clean(old.bill_no) !== clean(bill_no) ||
+      clean(old.shop_name) !== clean(shop_name) ||
+      parseFloat(old.amount || 0) !== parseFloat(amount || 0) ||
+      cleanLower(old.payment_mode) !== cleanLower(payment_mode) ||
+      cleanLower(old.status) !== cleanLower(status) ||
+      clean(old.bill_proof) !== clean(billProofUrl) ||
+      clean(old.payment_proof) !== clean(paymentProofUrl) ||
       parseFloat(old.cash_amount || 0) !== parseFloat(cash_amount || 0) ||
       parseFloat(old.upi_amount || 0) !== parseFloat(upi_amount || 0);
 

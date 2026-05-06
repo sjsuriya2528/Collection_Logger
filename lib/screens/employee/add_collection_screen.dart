@@ -26,7 +26,9 @@ class BillEntry {
 }
 
 class AddCollectionScreen extends StatefulWidget {
-  const AddCollectionScreen({super.key});
+  final List<Collection>? initialItems;
+  final int? initialIndex; // New: To scroll to specific bill
+  const AddCollectionScreen({super.key, this.initialItems, this.initialIndex});
 
   @override
   State<AddCollectionScreen> createState() => _AddCollectionScreenState();
@@ -35,13 +37,57 @@ class AddCollectionScreen extends StatefulWidget {
 class _AddCollectionScreenState extends State<AddCollectionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _shopController = TextEditingController();
-  final List<BillEntry> _bills = [BillEntry()];
+  List<BillEntry> _bills = [BillEntry()];
   bool _isSubmitting = false;
   final _picker = ImagePicker();
+  final ScrollController _scrollController = ScrollController();
+  final List<GlobalKey> _billKeys = [];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialItems != null && widget.initialItems!.isNotEmpty) {
+      _shopController.text = widget.initialItems!.first.shopName;
+      _bills = widget.initialItems!.map((item) {
+        _billKeys.add(GlobalKey()); // Key for each card
+        final entry = BillEntry();
+        entry.billNoController.text = item.billNo;
+        entry.amountController.text = item.amount.toInt().toString();
+        entry.mode = item.paymentMode;
+        entry.status = item.status;
+        entry.billProof = item.billProof;
+        entry.paymentProof = item.paymentProof;
+        entry.cashController.text = item.cashAmount.toInt().toString();
+        entry.upiController.text = item.upiAmount.toInt().toString();
+        return entry;
+      }).toList();
+
+      // Scroll to specific bill after build
+      if (widget.initialIndex != null && widget.initialIndex! < _bills.length) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToIndex(widget.initialIndex!);
+        });
+      }
+    } else {
+       _billKeys.add(GlobalKey());
+    }
+  }
+
+  void _scrollToIndex(int index) {
+    final context = _billKeys[index].currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context, 
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
 
   @override
   void dispose() {
     _shopController.dispose();
+    _scrollController.dispose();
     for (var bill in _bills) {
       bill.dispose();
     }
@@ -50,6 +96,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
 
   void _addBill() {
     setState(() {
+      _billKeys.add(GlobalKey());
       _bills.add(BillEntry());
     });
   }
@@ -83,7 +130,12 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
             title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
             onTap: () async {
               Navigator.pop(context);
-              final picked = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 800, maxHeight: 800, imageQuality: 30);
+              final picked = await _picker.pickImage(
+                source: ImageSource.gallery, 
+                imageQuality: 85,
+                maxWidth: 1800,
+                maxHeight: 1800,
+              );
               if (picked != null) onPicked(picked.path);
             },
           ),
@@ -92,7 +144,12 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
             title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
             onTap: () async {
               Navigator.pop(context);
-              final picked = await _picker.pickImage(source: ImageSource.camera, maxWidth: 800, maxHeight: 800, imageQuality: 30);
+              final picked = await _picker.pickImage(
+                source: ImageSource.camera, 
+                imageQuality: 85,
+                maxWidth: 1800,
+                maxHeight: 1800,
+              );
               if (picked != null) onPicked(picked.path);
             },
           ),
@@ -115,31 +172,61 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     try {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       final collProvider = Provider.of<CollectionProvider>(context, listen: false);
+      final bool isEdit = widget.initialItems != null;
       final shopName = _shopController.text;
-      final batchGroupId = const Uuid().v4();
-      final now = DateTime.now(); // We use a consistent time for the whole batch
+      final batchGroupId = isEdit ? (widget.initialItems!.first.groupId ?? const Uuid().v4()) : const Uuid().v4();
+      final date = isEdit ? widget.initialItems!.first.date : DateTime.now();
       
-      for (var bill in _bills) {
+      // If editing, we might need to handle records that were removed from the list
+      if (isEdit) {
+        // Logic to handle removed records could go here (e.g. delete from DB)
+        // For simplicity, we'll replace the existing ones by ID where possible, 
+        // but if the user removed a bill card, we should delete that record.
+        final currentIds = _bills.asMap().entries.map((e) {
+          if (e.key < widget.initialItems!.length) return widget.initialItems![e.key].id;
+          return const Uuid().v4();
+        }).toList();
+
+        for (var oldItem in widget.initialItems!) {
+          if (!currentIds.contains(oldItem.id)) {
+            await collProvider.deleteCollection(oldItem.id); 
+            // Note: need to add deleteCollection to Provider if not there, 
+            // or just use DatabaseHelper directly
+          }
+        }
+      }
+
+      for (int i = 0; i < _bills.length; i++) {
+        final bill = _bills[i];
         String? billProof = bill.billProof;
         String? paymentProof = bill.paymentProof;
+        
+        final id = (isEdit && i < widget.initialItems!.length) 
+            ? widget.initialItems![i].id 
+            : const Uuid().v4();
 
         final collection = Collection(
-          id: const Uuid().v4(),
+          id: id,
           employeeId: auth.user!.id,
           billNo: bill.billNoController.text,
           shopName: shopName,
           amount: double.parse(bill.amountController.text),
           paymentMode: bill.mode,
-          date: now,
+          date: date,
           status: bill.status,
           billProof: billProof,
           paymentProof: paymentProof,
           cashAmount: bill.mode == PaymentMode.both ? (double.tryParse(bill.cashController.text) ?? 0) : 0,
           upiAmount: bill.mode == PaymentMode.both ? (double.tryParse(bill.upiController.text) ?? 0) : 0,
           groupId: batchGroupId,
+          isSynced: false, // Mark as unsynced for re-upload
         );
 
-        await collProvider.addCollection(collection, auth.user!.token, syncImmediately: false);
+        if (isEdit && i < widget.initialItems!.length) {
+          await collProvider.updateCollection(collection);
+        } else {
+          await collProvider.addCollection(collection, auth.user!.token, syncImmediately: false);
+        }
       }
 
       // Trigger a single batch sync for all added bills
@@ -150,7 +237,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Successfully added collections!'), backgroundColor: Colors.green),
+          SnackBar(content: Text(isEdit ? 'Collection updated!' : 'Successfully added collections!'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -169,7 +256,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Add Collections', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(widget.initialItems != null ? 'Edit Collection' : 'Add Collections', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: Form(
         key: _formKey,
@@ -220,7 +307,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                   ),
                   child: _isSubmitting 
                     ? const CircularProgressIndicator(color: Color(0xFF1A1A2E))
-                    : const Text('SUBMIT ALL COLLECTIONS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    : Text(widget.initialItems != null ? 'SAVE CHANGES' : 'SUBMIT ALL COLLECTIONS', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -233,6 +320,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
 
   Widget _buildBillCard(int index, BillEntry bill) {
     return Container(
+      key: _billKeys[index],
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -446,12 +534,26 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
       controller: controller,
       readOnly: isReadOnly,
       keyboardType: keyboardType,
-      onChanged: onChanged,
+      textInputAction: label == 'Shop Name' ? TextInputAction.next : TextInputAction.done,
+      onChanged: (v) {
+        if (onChanged != null) onChanged(v);
+        setState(() {}); // For suffix icon visibility
+      },
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white60),
         prefixIcon: Icon(icon, color: Colors.cyanAccent),
+        suffixIcon: controller.text.isNotEmpty && !isReadOnly
+          ? IconButton(
+              icon: const Icon(Icons.clear_rounded, color: Colors.white38, size: 20),
+              onPressed: () {
+                controller.clear();
+                if (onChanged != null) onChanged("");
+                setState(() {});
+              },
+            )
+          : null,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,9 @@ import '../../providers/auth_provider.dart';
 import 'package:provider/provider.dart';
 import '../../services/pdf_service.dart';
 import '../common/pdf_preview_screen.dart';
+import '../employee/add_collection_screen.dart';
+import '../common/full_screen_image_viewer.dart';
+import '../../models/collection.dart';
 
 class EmployeeHistoryScreen extends StatefulWidget {
   final String employeeId;
@@ -133,6 +137,17 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       return s;
     });
     final chequeTotal = filtered.where((c) => c['payment_mode'].toString().toLowerCase() == 'cheque').fold(0.0, (s, c) => s + double.parse(c['amount'].toString()));
+
+
+
+    // Feature: n FIN (Completed bills count per shop)
+    final Map<String, int> shopFinCounts = {};
+    for (var c in filtered) {
+      if ((c['status'] ?? 'partial').toString().toLowerCase().trim() == 'completed') {
+        final key = c['shop_name']?.toString().trim().toLowerCase() ?? "";
+        if (key.isNotEmpty) shopFinCounts[key] = (shopFinCounts[key] ?? 0) + 1;
+      }
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
@@ -291,7 +306,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                               itemBuilder: (context, index) {
                                 final gid = groupIds[index];
                                 final items = grouped[gid]!;
-                                return _buildGroupedItem(gid, items);
+                                return _buildGroupedItem(gid, items, shopFinCounts);
                               },
                             );
                           },
@@ -320,7 +335,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  Widget _buildGroupedItem(String groupId, List<dynamic> items) {
+  Widget _buildGroupedItem(String groupId, List<dynamic> items, Map<String, int> shopFinCounts) {
     final first = items.first;
     final bool isGroup = items.length > 1;
     final bool isExpanded = _expandedGroups.contains(groupId);
@@ -405,9 +420,30 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            first['shop_name'].toString(), 
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  first['shop_name'].toString(), 
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                              ),
+                              if (shopFinCounts[first['shop_name'].toString().trim().toLowerCase()] != null) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
+                                  ),
+                                  child: Text(
+                                    '${shopFinCounts[first['shop_name'].toString().trim().toLowerCase()]} FIN',
+                                    style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -431,7 +467,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                               ],
                             ),
                           ],
-                          if (!isGroup) ...[
+                          if (isGroup) ...[
+                             const SizedBox(height: 8),
+                          ] else ...[
                              const SizedBox(height: 12),
                              Row(
                                children: [
@@ -439,7 +477,12 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                                    padding: EdgeInsets.zero,
                                    constraints: const BoxConstraints(),
                                    icon: const Icon(Icons.edit_rounded, size: 16, color: Colors.white38),
-                                   onPressed: () => _showEditDialog(first),
+                                   onPressed: () {
+                                     Navigator.push(
+                                       context, 
+                                       MaterialPageRoute(builder: (context) => AddCollectionScreen(initialItems: [Collection.fromMap(first)]))
+                                     ).then((_) => _fetchHistory());
+                                   },
                                  ),
                                  const SizedBox(width: 16),
                                  IconButton(
@@ -492,7 +535,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
           
           if (isExpanded && isGroup) ...[
             const Divider(color: Colors.white10, height: 1),
-            ...items.map((coll) => _buildSubBillItem(coll, sharedPaymentProof)).toList(),
+            ...items.asMap().entries.map((entry) => _buildSubBillItem(entry.value, sharedPaymentProof, items, entry.key)).toList(),
             
             if (sharedPaymentProof != null)
               Padding(
@@ -520,7 +563,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  Widget _buildSubBillItem(dynamic coll, String? sharedPaymentProof) {
+  Widget _buildSubBillItem(dynamic coll, String? sharedPaymentProof, List<dynamic> allItems, int index) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
@@ -567,40 +610,60 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              if (coll['bill_proof'] != null) _buildProofChip('BILL', coll['bill_proof']),
-              if (coll['payment_proof'] != null && coll['payment_proof'] != sharedPaymentProof) ...[ 
-                const SizedBox(width: 8),
-                _buildProofChip('PAY', coll['payment_proof']),
+              // Individual bill proofs
+              if (coll['billProof'] != null || coll['bill_proof'] != null) 
+                _buildProofChip('BILL', coll['billProof'] ?? coll['bill_proof']),
+              
+              if ((coll['paymentProof'] != null || coll['payment_proof'] != null) &&
+                  (coll['paymentProof'] ?? coll['payment_proof']) != sharedPaymentProof) ...[
+                if (coll['billProof'] != null || coll['bill_proof'] != null)
+                  const SizedBox(width: 8),
+                _buildProofChip('PAY', coll['paymentProof'] ?? coll['payment_proof']),
               ],
-              const Spacer(),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                icon: const Icon(Icons.edit_rounded, size: 18, color: Colors.white38),
-                onPressed: () => _showEditDialog(coll),
-              ),
-              const SizedBox(width: 16),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                icon: Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent.withOpacity(0.7)),
-                onPressed: () => _confirmDelete(coll),
-              ),
-            ],
-          ),
-        ],
-      ),
+               const Spacer(),
+               IconButton(
+                 padding: EdgeInsets.zero,
+                 constraints: const BoxConstraints(),
+                 icon: const Icon(Icons.edit_rounded, size: 18, color: Colors.white38),
+                 onPressed: () {
+                   Navigator.push(
+                     context, 
+                     MaterialPageRoute(
+                       builder: (context) => AddCollectionScreen(
+                         initialItems: allItems.map((i) => Collection.fromMap(i)).toList(),
+                         initialIndex: index,
+                       )
+                     )
+                   ).then((_) => _fetchHistory());
+                 },
+               ),
+               const SizedBox(width: 16),
+               IconButton(
+                 padding: EdgeInsets.zero,
+                 constraints: const BoxConstraints(),
+                 icon: Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent.withOpacity(0.7)),
+                 onPressed: () => _confirmDelete(coll),
+               ),
+             ],
+           ),
+         ],
+       ),
     );
   }
 
-  void _confirmDelete(dynamic coll) {
+  void _confirmDelete(dynamic coll, {List<dynamic>? items}) {
+    final bool isGroup = items != null;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Text('Delete Record', style: TextStyle(color: Colors.white)),
-        content: Text('Are you sure you want to delete the record for "${coll['shop_name']}"? This cannot be undone.', 
-          style: const TextStyle(color: Colors.white70)),
+        title: Text(isGroup ? 'Delete Entire Group?' : 'Delete Record', style: const TextStyle(color: Colors.white)),
+        content: Text(
+          isGroup 
+            ? 'This will delete all ${items.length} records in this group. This cannot be undone.'
+            : 'Are you sure you want to delete the record for "${coll['shop_name']}"? This cannot be undone.', 
+          style: const TextStyle(color: Colors.white70)
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -610,12 +673,25 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
             onPressed: () async {
               Navigator.pop(context);
               final auth = Provider.of<AuthProvider>(context, listen: false);
-              final success = await ApiService.deleteCollection(coll['id'], auth.user!.token!);
-              if (success) {
-                _fetchHistory(); // Refresh list
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Record deleted successfully')));
+              
+              if (isGroup) {
+                bool allSuccess = true;
+                for (var item in items) {
+                  final success = await ApiService.deleteCollection(item['id'], auth.user!.token!);
+                  if (!success) allSuccess = false;
+                }
+                if (allSuccess) {
+                  _fetchHistory();
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Group deleted successfully')));
+                }
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete record'), backgroundColor: Colors.redAccent));
+                final success = await ApiService.deleteCollection(coll['id'], auth.user!.token!);
+                if (success) {
+                  _fetchHistory();
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Record deleted successfully')));
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to delete record'), backgroundColor: Colors.redAccent));
+                }
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
@@ -665,67 +741,10 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
   }
 
   void _showImageViewer(String path, String title) {
-    final imageUrl = ApiService.getImageUrl(path);
-    
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        insetPadding: const EdgeInsets.all(20),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.8,
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
-                leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-              ),
-              Flexible(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 20, left: 20, right: 20),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: InteractiveViewer(
-                      panEnabled: true,
-                      minScale: 0.5,
-                      maxScale: 4.0,
-                      child: Image.network(
-                        imageUrl,
-                        fit: BoxFit.contain,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(40.0),
-                              child: CircularProgressIndicator(color: Colors.cyanAccent),
-                            ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          padding: const EdgeInsets.all(40),
-                          color: Colors.white.withOpacity(0.05),
-                          child: const Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 40),
-                              SizedBox(height: 8),
-                              Text('Failed to load image', style: TextStyle(color: Colors.white60)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullScreenImageViewer(path: path, title: title),
       ),
     );
   }
@@ -945,9 +964,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                         Navigator.pop(context);
                         final picked = await picker.pickImage(
                           source: ImageSource.gallery, 
-                          maxWidth: 800,
-                          maxHeight: 800,
-                          imageQuality: 30,
+                          maxWidth: 1800,
+                          maxHeight: 1800,
+                          imageQuality: 85,
                         );
                         if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
                       },
@@ -959,9 +978,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                         Navigator.pop(context);
                         final picked = await picker.pickImage(
                           source: ImageSource.camera, 
-                          maxWidth: 800,
-                          maxHeight: 800,
-                          imageQuality: 30,
+                          maxWidth: 1800,
+                          maxHeight: 1800,
+                          imageQuality: 85,
                         );
                         if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
                       },
@@ -1226,30 +1245,36 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.cyanAccent.withOpacity(0.1), Colors.blueAccent.withOpacity(0.05)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Total Collection', style: TextStyle(color: Colors.white60, fontSize: 12)),
-                    Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                  ],
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.cyanAccent.withOpacity(0.1), Colors.blueAccent.withOpacity(0.05)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Total Collection', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                          Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const Icon(Icons.account_balance_wallet_rounded, color: Colors.cyanAccent, size: 32),
+                    ],
+                  ),
                 ),
-                const Icon(Icons.account_balance_wallet_rounded, color: Colors.cyanAccent, size: 32),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Row(
@@ -1291,299 +1316,5 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  void _showEditDialog(dynamic coll) {
-    final billController = TextEditingController(text: coll['bill_no']);
-    final shopController = TextEditingController(text: coll['shop_name']);
-    final amountController = TextEditingController(text: coll['amount'].toString());
-    final cashController = TextEditingController(text: (coll['cash_amount'] ?? 0).toString());
-    final upiController = TextEditingController(text: (coll['upi_amount'] ?? 0).toString());
-    String mode = coll['payment_mode'];
-    String status = coll['status'] ?? 'partial';
-    String? billProof = coll['bill_proof'];
-    String? paymentProof = coll['payment_proof'];
-    final picker = ImagePicker();
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF16213E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
-      builder: (context) {
-        bool isSaving = false;
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            Future<void> pickImg(bool isBill) async {
-              showModalBottomSheet(
-                context: context,
-                backgroundColor: const Color(0xFF1A1A2E),
-                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                builder: (context) => Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 8),
-                    Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-                    const SizedBox(height: 16),
-                    ListTile(
-                      leading: const Icon(Icons.photo_library_rounded, color: Colors.cyanAccent),
-                      title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800, maxHeight: 800, imageQuality: 30);
-                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.camera_alt_rounded, color: Colors.cyanAccent),
-                      title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final picked = await picker.pickImage(source: ImageSource.camera, maxWidth: 800, maxHeight: 800, imageQuality: 30);
-                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              );
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-                top: 24, left: 24, right: 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
-                    const SizedBox(height: 24),
-                    const Text('Edit Record (Admin)', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 32),
-                    _buildAdminEditField(billController, 'Bill No', Icons.numbers, isNumber: true),
-                    const SizedBox(height: 16),
-                    _buildAdminEditField(shopController, 'Shop Name', Icons.store),
-                    const SizedBox(height: 16),
-                    _buildAdminEditField(amountController, 'Total Amount', Icons.currency_rupee, isNumber: true, isReadOnly: mode == 'both'),
-                    if (mode == 'both') ...[
-                       const SizedBox(height: 16),
-                       Row(children: [
-                         Expanded(child: _buildAdminEditField(cashController, 'Cash', Icons.money, isNumber: true, onChanged: (v) {
-                            double c = double.tryParse(v) ?? 0;
-                            double u = double.tryParse(upiController.text) ?? 0;
-                            amountController.text = (c + u).toString();
-                         })),
-                         const SizedBox(width: 12),
-                         Expanded(child: _buildAdminEditField(upiController, 'UPI', Icons.account_balance, isNumber: true, onChanged: (v) {
-                            double u = double.tryParse(v) ?? 0;
-                            double c = double.tryParse(cashController.text) ?? 0;
-                            amountController.text = (c + u).toString();
-                         })),
-                       ]),
-                    ],
-                    
-                    const SizedBox(height: 24),
-                    const Text('PAYMENT MODE', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: ['cash', 'upi', 'cheque', 'both'].map((m) {
-                          final isSel = mode == m;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: Text(m.toUpperCase()),
-                              selected: isSel,
-                              onSelected: (s) => setModalState(() {
-                                mode = m;
-                                if (m != 'upi' && m != 'both' && m != 'cheque') paymentProof = null;
-                                if (m != 'both') {
-                                  cashController.text = '0';
-                                  upiController.text = '0';
-                                }
-                              }),
-                              backgroundColor: Colors.white.withOpacity(0.05),
-                              selectedColor: Colors.cyanAccent,
-                              labelStyle: TextStyle(color: isSel ? Colors.black : Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-                    const Text('STATUS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: ['partial', 'completed'].map((s) {
-                        final isSel = status == s;
-                        return Expanded(
-                          child: GestureDetector(
-                            onTap: () => setModalState(() {
-                              status = s;
-                              if (s != 'completed') billProof = null;
-                            }),
-                            child: Container(
-                              margin: const EdgeInsets.only(right: 8),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                color: isSel ? (s == 'completed' ? Colors.greenAccent : Colors.orangeAccent) : Colors.white.withOpacity(0.05),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Center(child: Text(s.toUpperCase(), style: TextStyle(color: isSel ? const Color(0xFF1A1A2E) : Colors.white60, fontSize: 12, fontWeight: FontWeight.bold))),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-
-                    const SizedBox(height: 24),
-                    if ((status == 'completed') || (mode == 'upi' || mode == 'both' || mode == 'cheque')) ...[
-                      const Text('PROOFS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 12),
-                      if (status == 'completed') ...[
-                        _buildEditProofButton(label: 'Bill Proof', path: billProof, onTap: () => pickImg(true)),
-                        const SizedBox(height: 12),
-                      ],
-                      if (mode == 'upi' || mode == 'both' || mode == 'cheque') ...[
-                        _buildEditProofButton(label: 'Payment Proof', path: paymentProof, onTap: () => pickImg(false)),
-                      ],
-                    ],
-
-                    const SizedBox(height: 40),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.cyanAccent,
-                          foregroundColor: const Color(0xFF1A1A2E),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        onPressed: isSaving ? null : () async {
-                          setModalState(() => isSaving = true);
-                          final auth = Provider.of<AuthProvider>(context, listen: false);
-                          
-                          final fields = {
-                            'bill_no': billController.text,
-                            'shop_name': shopController.text,
-                            'amount': amountController.text,
-                            'payment_mode': mode,
-                            'status': status,
-                            'cash_amount': mode == 'both' ? cashController.text : (mode == 'cash' ? amountController.text : '0'),
-                            'upi_amount': mode == 'both' ? upiController.text : (mode == 'upi' ? amountController.text : '0'),
-                          };
-
-                          final result = await ApiService.updateCollection(
-                            coll['id'], 
-                            fields, 
-                            auth.user!.token!,
-                            billProofPath: billProof,
-                            paymentProofPath: paymentProof,
-                          );
-
-                          if (result != null) {
-                            _fetchHistory();
-                            Navigator.pop(context);
-                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Updated successfully')));
-                          } else {
-                            setModalState(() => isSaving = false);
-                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Update failed'), backgroundColor: Colors.redAccent));
-                          }
-                        },
-                        child: isSaving 
-                          ? const CircularProgressIndicator(color: Color(0xFF1A1A2E))
-                          : const Text('SAVE CHANGES', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildAdminEditField(TextEditingController controller, String label, IconData icon, {bool isNumber = false, bool isReadOnly = false, Function(String)? onChanged}) {
-    return TextField(
-      controller: controller,
-      readOnly: isReadOnly,
-      keyboardType: isNumber ? TextInputType.phone : TextInputType.text,
-      onChanged: onChanged,
-      style: const TextStyle(color: Colors.white),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: Colors.white38),
-        prefixIcon: Icon(icon, color: Colors.cyanAccent, size: 20),
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.05),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.cyanAccent)),
-      ),
-    );
-  }
-
-  Widget _buildAdminModeSelector(String current, Function(String) onSelect) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('PAYMENT MODE', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        Row(
-          children: ['cash', 'upi', 'cheque', 'both'].map((m) {
-            final isSel = current == m;
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => onSelect(m),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 6),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isSel ? Colors.cyanAccent : Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(child: Text(m.toUpperCase(), style: TextStyle(color: isSel ? Colors.black : Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAdminStatusSelector(String current, Function(String) onSelect) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('STATUS', style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        Row(
-          children: ['partial', 'completed'].map((s) {
-            final isSel = current == s;
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => onSelect(s),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 6),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isSel ? Colors.cyanAccent.withOpacity(0.2) : Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isSel ? Colors.cyanAccent : Colors.transparent),
-                  ),
-                  child: Center(child: Text(s.toUpperCase(), style: TextStyle(color: isSel ? Colors.cyanAccent : Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
 }

@@ -15,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _obscurePassword = true;
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +97,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               label: 'Password',
                               icon: Icons.lock_outline,
                               isPassword: true,
+                              obscureText: _obscurePassword,
+                              onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                             ),
                             Align(
                               alignment: Alignment.centerRight,
@@ -171,15 +174,41 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildTextField({required TextEditingController controller, required String label, required IconData icon, bool isPassword = false}) {
+  Widget _buildTextField({
+    required TextEditingController controller, 
+    required String label, 
+    required IconData icon, 
+    bool isPassword = false,
+    bool obscureText = false,
+    VoidCallback? onToggleVisibility,
+  }) {
     return TextFormField(
       controller: controller,
-      obscureText: isPassword,
+      obscureText: isPassword ? obscureText : false,
       style: const TextStyle(color: Colors.white),
+      textInputAction: isPassword ? TextInputAction.done : TextInputAction.next,
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white60),
         prefixIcon: Icon(icon, color: Colors.cyanAccent),
+        suffixIcon: isPassword 
+          ? IconButton(
+              icon: Icon(
+                obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                color: Colors.white38,
+                size: 20,
+              ),
+              onPressed: onToggleVisibility,
+            )
+          : controller.text.isNotEmpty 
+              ? IconButton(
+                  icon: const Icon(Icons.clear_rounded, color: Colors.white38, size: 20),
+                  onPressed: () {
+                    controller.clear();
+                    setState(() {});
+                  },
+                )
+              : null,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
@@ -191,6 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
         filled: true,
         fillColor: Colors.white.withOpacity(0.05),
       ),
+      onChanged: (v) => setState(() {}),
       validator: (value) => value!.isEmpty ? 'Field required' : null,
     );
   }

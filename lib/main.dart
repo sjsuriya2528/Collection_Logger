@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/collection_provider.dart';
@@ -12,6 +13,8 @@ import 'package:local_notifier/local_notifier.dart';
 import 'database/database_helper.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,22 +56,30 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'A C M',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF1A1A2E),
-        canvasColor: const Color(0xFF1A1A2E),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.cyanAccent,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          navigatorKey.currentState?.maybePop();
+        },
+      },
+      child: MaterialApp(
+        navigatorKey: navigatorKey,
+        title: 'A C M',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
           brightness: Brightness.dark,
-          surface: const Color(0xFF16213E),
+          scaffoldBackgroundColor: const Color(0xFF1A1A2E),
+          canvasColor: const Color(0xFF1A1A2E),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.cyanAccent,
+            brightness: Brightness.dark,
+            surface: const Color(0xFF16213E),
+          ),
+          useMaterial3: true,
+          fontFamily: 'Roboto',
         ),
-        useMaterial3: true,
-        fontFamily: 'Roboto',
+        home: const AuthWrapper(),
       ),
-      home: const AuthWrapper(),
     );
   }
 }

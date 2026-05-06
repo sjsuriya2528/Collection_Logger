@@ -123,9 +123,16 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: collProvider.collections.take(5).length, // Show only recent 5
                 itemBuilder: (context, index) {
-                  return _buildCollectionItem(collProvider.collections[index]);
-                },
-              ),
+              final Map<String, int> shopFinCounts = {};
+              for (var c in collProvider.collections) {
+                if (c.status.toLowerCase().trim() == 'completed') {
+                  final key = c.shopName.trim().toLowerCase();
+                  shopFinCounts[key] = (shopFinCounts[key] ?? 0) + 1;
+                }
+              }
+              return _buildCollectionItem(collProvider.collections[index], shopFinCounts);
+            },
+          ),
               const SizedBox(height: 100),
             ],
           ),
@@ -153,6 +160,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }
 
   Widget _buildHeader(String name) {
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       decoration: BoxDecoration(
@@ -202,7 +210,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ),
           ),
           const SizedBox(width: 8),
-          // Right section: Avatar
           CircleAvatar(
             radius: 18,
             backgroundColor: Colors.white.withOpacity(0.05),
@@ -280,7 +287,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
-  Widget _buildCollectionItem(Collection coll) {
+  Widget _buildCollectionItem(Collection coll, Map<String, int> shopFinCounts) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -304,7 +311,32 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(coll.shopName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        coll.shopName, 
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (shopFinCounts[coll.shopName.trim().toLowerCase()] != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
+                        ),
+                        child: Text(
+                          '${shopFinCounts[coll.shopName.trim().toLowerCase()]} FIN',
+                          style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 Text(
                   '${coll.billNo} • ${DateFormat('hh:mm a').format(coll.date)}',
                   style: const TextStyle(color: Colors.white60, fontSize: 12),

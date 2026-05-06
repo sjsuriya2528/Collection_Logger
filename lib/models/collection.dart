@@ -96,4 +96,37 @@ class Collection {
       'group_id': groupId,
     };
   }
+
+  Collection copyWith({
+    String? billNo,
+    String? shopName,
+    double? amount,
+    PaymentMode? paymentMode,
+    DateTime? date,
+    bool? isSynced,
+    String? status,
+    String? billProof,
+    String? paymentProof,
+    double? cashAmount,
+    double? upiAmount,
+    String? groupId,
+  }) {
+    return Collection(
+      id: id,
+      employeeId: employeeId,
+      billNo: billNo ?? this.billNo,
+      shopName: shopName ?? this.shopName,
+      amount: amount ?? this.amount,
+      paymentMode: paymentMode ?? this.paymentMode,
+      date: date ?? this.date,
+      isSynced: isSynced ?? this.isSynced,
+      status: status ?? this.status,
+      billProof: billProof ?? this.billProof,
+      paymentProof: paymentProof ?? this.paymentProof,
+      cashAmount: cashAmount ?? this.cashAmount,
+      upiAmount: upiAmount ?? this.upiAmount,
+      groupId: groupId ?? this.groupId,
+    );
+  }
 }
+

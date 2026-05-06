@@ -55,7 +55,7 @@ class NotificationService {
     await _localNotifications.show(
       message.hashCode,
       message.notification?.title ?? 'New Update',
-      message.notification?.body ?? 'An employee has updated a record.',
+      message.notification?.body ?? 'New data has been synchronized.',
       details,
     );
   }

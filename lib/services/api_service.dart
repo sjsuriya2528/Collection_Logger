@@ -72,7 +72,7 @@ class ApiService {
     // Add files if they exist (local paths) or add as string if already a URL
     if (collection.billProof != null) {
       if (collection.billProof!.startsWith('http') || collection.billProof!.startsWith('/uploads')) {
-        request.fields['bill_proof'] = collection.billProof!;
+        request.fields['billProof'] = collection.billProof!;
       } else {
         request.files.add(await http.MultipartFile.fromPath('billProof', collection.billProof!));
       }
@@ -80,7 +80,7 @@ class ApiService {
     
     if (collection.paymentProof != null) {
       if (collection.paymentProof!.startsWith('http') || collection.paymentProof!.startsWith('/uploads')) {
-        request.fields['payment_proof'] = collection.paymentProof!;
+        request.fields['paymentProof'] = collection.paymentProof!;
       } else {
         request.files.add(await http.MultipartFile.fromPath('paymentProof', collection.paymentProof!));
       }
@@ -89,7 +89,12 @@ class ApiService {
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
     
-    if (response.statusCode == 201 || response.statusCode == 200) {
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 200) {
+      // Already exists on server. 
+      // We don't call updateCollection here to avoid redundant notifications during background sync.
+      // The server already has the record.
       return jsonDecode(response.body);
     } else {
       print('Sync Error: ${response.body}');
@@ -123,6 +128,28 @@ class ApiService {
       throw Exception(jsonDecode(response.body)['message'] ?? 'Change failed');
     }
   }
+
+  static Future<String?> uploadFile(String filePath, String token, String type) async {
+    try {
+      final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/upload'));
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['type'] = type; // 'bill' or 'payment'
+      request.files.add(await http.MultipartFile.fromPath('file', filePath));
+      
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['url'];
+      }
+      return null;
+    } catch (e) {
+      print('Upload Error: $e');
+      return null;
+    }
+  }
+
+
 
   static Future<Map<String, dynamic>> signup(String name, String email, String password, String role, {String? adminSecretCode}) async {
     try {

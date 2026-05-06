@@ -99,15 +99,20 @@ class DatabaseHelper {
     return result.map((json) => Collection.fromMap(json)).toList();
   }
 
-  Future<int> markAsSynced(String id) async {
+  Future<int> markAsSynced(String id, {String? billProof, String? paymentProof}) async {
     final db = await instance.database;
+    final Map<String, dynamic> values = {'is_synced': 1};
+    if (billProof != null) values['bill_proof'] = billProof;
+    if (paymentProof != null) values['payment_proof'] = paymentProof;
+    
     return await db.update(
       'collections',
-      {'is_synced': 1},
+      values,
       where: 'id = ?',
       whereArgs: [id],
     );
   }
+
 
   Future<int> deleteCollection(String id) async {
     final db = await instance.database;
