@@ -10,6 +10,7 @@ import '../../services/pdf_service.dart';
 import '../common/pdf_preview_screen.dart';
 import '../employee/add_collection_screen.dart';
 import '../../models/collection.dart';
+import '../common/full_screen_image_viewer.dart';
 
 class AllCollectionsHistoryScreen extends StatefulWidget {
   const AllCollectionsHistoryScreen({super.key});
@@ -23,12 +24,36 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
   bool _isLoading = true;
   DateTime? _startDate;
   DateTime? _endDate;
+  String _selectedMode = 'all';
+  String _selectedStatusFilter = 'all';
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, now.day);
+    _endDate = DateTime(now.year, now.month, now.day);
     _fetchData();
+  }
+
+  void _applyQuickFilter(String type) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    setState(() {
+      if (type == 'Today') {
+        _startDate = today;
+        _endDate = today;
+      } else if (type == 'Yesterday') {
+        _startDate = today.subtract(const Duration(days: 1));
+        _endDate = today.subtract(const Duration(days: 1));
+      } else if (type == 'Last 7 Days') {
+        _startDate = today.subtract(const Duration(days: 7));
+        _endDate = today;
+      }
+    });
+    Navigator.pop(context);
   }
 
   Future<void> _fetchData() async {
@@ -48,28 +73,63 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     }
   }
 
+  DateTime _parseDate(dynamic date) {
+    String dateStr = date.toString();
+    if (!dateStr.contains('Z') && !dateStr.contains('+')) {
+      dateStr += 'Z';
+    }
+    return DateTime.parse(dateStr).toLocal();
+  }
+
   List<dynamic> get _filteredCollections {
     return _allCollections.where((c) {
-      final date = DateTime.parse(c['date']);
+      final date = _parseDate(c['date']);
+      final d = DateTime(date.year, date.month, date.day);
+
       bool matchesDate = true;
       if (_startDate != null && _endDate != null) {
-        matchesDate = !date.isBefore(_startDate!) && 
-                      date.isBefore(_endDate!.add(const Duration(days: 1)));
+        matchesDate = !d.isBefore(_startDate!) && !d.isAfter(_endDate!);
       }
       
+      // Mode Filter
+      bool matchesMode = true;
+      if (_selectedMode != 'all') {
+        final mode = c['payment_mode'].toString().toLowerCase();
+        matchesMode = mode == _selectedMode || (_selectedMode == 'upi' && mode == 'both');
+      }
+
+      // Status Filter
+      bool matchesStatus = true;
+      if (_selectedStatusFilter != 'all') {
+        matchesStatus = (c['status'] ?? 'partial').toString().toLowerCase() == _selectedStatusFilter;
+      }
+
       final query = _searchController.text.toLowerCase();
       bool matchesSearch = c['shop_name'].toString().toLowerCase().contains(query) ||
                           c['bill_no'].toString().toLowerCase().contains(query) ||
                           (c['employee_name'] ?? '').toString().toLowerCase().contains(query);
       
-      return matchesDate && matchesSearch;
+      return matchesDate && matchesSearch && matchesMode && matchesStatus;
     }).toList()..sort((a, b) => b['date'].compareTo(a['date']));
   }
 
-  double get _totalAmount => _filteredCollections.fold(0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
-  double get _cashAmount => _filteredCollections.where((e) => e['payment_mode'] == 'cash').fold(0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
-  double get _upiAmount => _filteredCollections.where((e) => e['payment_mode'] == 'upi').fold(0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
-  double get _chequeAmount => _filteredCollections.where((e) => e['payment_mode'] == 'cheque').fold(0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
+  double get _totalAmount => _filteredCollections.fold(0.0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
+  
+  double get _cashAmount => _filteredCollections.fold(0.0, (sum, item) {
+    final mode = item['payment_mode'].toString().toLowerCase();
+    if (mode == 'cash') return sum + (double.tryParse(item['amount'].toString()) ?? 0);
+    if (mode == 'both') return sum + (double.tryParse(item['cash_amount'].toString()) ?? 0);
+    return sum;
+  });
+
+  double get _upiAmount => _filteredCollections.fold(0.0, (sum, item) {
+    final mode = item['payment_mode'].toString().toLowerCase();
+    if (mode == 'upi') return sum + (double.tryParse(item['amount'].toString()) ?? 0);
+    if (mode == 'both') return sum + (double.tryParse(item['upi_amount'].toString()) ?? 0);
+    return sum;
+  });
+
+  double get _chequeAmount => _filteredCollections.where((e) => e['payment_mode'].toString().toLowerCase() == 'cheque').fold(0.0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
 
 
 
@@ -86,6 +146,13 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           _buildReportsButton(),
+          IconButton(
+            icon: Icon(
+              Icons.tune_rounded, 
+              color: (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all') ? Colors.cyanAccent : Colors.white
+            ),
+            onPressed: _showFilterBottomSheet,
+          ),
           const SizedBox(width: 8),
         ],
       ),
@@ -199,67 +266,234 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Search shop, bill or employee...',
-              hintStyle: const TextStyle(color: Colors.white24),
-              prefixIcon: const Icon(Icons.search, color: Colors.white24),
+              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              prefixIcon: const Icon(Icons.search_rounded, color: Colors.cyanAccent, size: 20),
+              suffixIcon: _searchController.text.isNotEmpty 
+                ? IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white24, size: 20), onPressed: () => setState(() => _searchController.clear()))
+                : null,
               filled: true,
               fillColor: Colors.white.withOpacity(0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(0.05))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.cyanAccent, width: 1)),
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDateChip(
-                  _startDate == null ? 'Start Date' : DateFormat('dd MMM').format(_startDate!),
-                  () => _selectDate(true),
+          if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all') ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.filter_list_rounded, color: Colors.cyanAccent, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${_selectedMode.toUpperCase()} • ${_startDate == null ? "All Time" : (_startDate == _endDate ? DateFormat('dd MMM').format(_startDate!) : "${DateFormat('dd MMM').format(_startDate!)} - ${DateFormat('dd MMM').format(_endDate!)}")} • ${_selectedStatusFilter.toUpperCase()}',
+                    style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildDateChip(
-                  _endDate == null ? 'End Date' : DateFormat('dd MMM').format(_endDate!),
-                  () => _selectDate(false),
+                GestureDetector(
+                  onTap: () => setState(() { 
+                    _startDate = null; 
+                    _endDate = null; 
+                    _selectedMode = 'all'; 
+                    _selectedStatusFilter = 'all';
+                  }),
+                  child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
-              ),
-              if (_startDate != null || _endDate != null)
-                IconButton(
-                  onPressed: () => setState(() { _startDate = null; _endDate = null; }),
-                  icon: const Icon(Icons.close, color: Colors.redAccent, size: 20),
-                ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildDateChip(String label, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
+  void _showFilterBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF16213E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 24, left: 24, right: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+                    const SizedBox(height: 24),
+                    const Text('Filter Collections', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 24),
+                    const Text('PAYMENT STATUS', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: ['all', 'partial', 'completed'].map((s) {
+                        final isSelected = _selectedStatusFilter == s;
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () => setModalState(() => _selectedStatusFilter = s),
+                            child: Container(
+                              margin: EdgeInsets.only(right: s == 'completed' ? 0 : 8),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isSelected ? Colors.cyanAccent : Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  s.toUpperCase(),
+                                  style: TextStyle(color: isSelected ? const Color(0xFF1A1A2E) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text('PAYMENT MODE', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: ['all', 'cash', 'upi', 'cheque'].map((m) {
+                          final isSelected = _selectedMode == m;
+                          return GestureDetector(
+                            onTap: () => setModalState(() => _selectedMode = m),
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isSelected ? Colors.cyanAccent : Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                m.toUpperCase(),
+                                style: TextStyle(color: isSelected ? const Color(0xFF1A1A2E) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    const Text('DATE RANGE', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _buildQuickChip('Today'),
+                        const SizedBox(width: 8),
+                        _buildQuickChip('Yesterday'),
+                        const SizedBox(width: 8),
+                        _buildQuickChip('Last 7 Days'),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: _buildDateTile('Start Date', _startDate, (d) => setModalState(() => _startDate = d))),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildDateTile('End Date', _endDate, (d) => setModalState(() => _endDate = d))),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {});
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.cyanAccent,
+                          foregroundColor: const Color(0xFF1A1A2E),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: const Text('APPLY FILTER', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildQuickChip(String label) {
+    return GestureDetector(
+      onTap: () => _applyQuickFilter(label),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withOpacity(0.05))),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.calendar_today_rounded, size: 14, color: Colors.cyanAccent),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withOpacity(0.1)),
         ),
+        child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
       ),
     );
   }
 
-  Future<void> _selectDate(bool start) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2023),
-      lastDate: DateTime.now(),
+  Widget _buildDateTile(String label, DateTime? date, Function(DateTime) onPicked) {
+    return GestureDetector(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: date ?? DateTime.now(),
+          firstDate: DateTime(2023),
+          lastDate: DateTime.now(),
+          builder: (context, child) => Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: const ColorScheme.dark(
+                primary: Colors.cyanAccent,
+                onPrimary: Color(0xFF1A1A2E),
+                surface: Color(0xFF16213E),
+                onSurface: Colors.white,
+              ),
+            ),
+            child: child!,
+          ),
+        );
+        if (picked != null) onPicked(picked);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today_rounded, size: 12, color: Colors.cyanAccent),
+                const SizedBox(width: 8),
+                Text(
+                  date == null ? 'Select Date' : DateFormat('dd MMM, yyyy').format(date),
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
-    if (picked != null) setState(() => start ? _startDate = picked : _endDate = picked);
   }
 
   Widget _buildSummaryCards() {
@@ -447,67 +681,10 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
   }
 
   void _showImageViewer(String path, String title) {
-    final imageUrl = ApiService.getImageUrl(path);
-    showDialog(
-      context: context,
-      builder: (context) => CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.pop(context),
-        },
-        child: Dialog(
-          backgroundColor: const Color(0xFF1A1A2E),
-          insetPadding: const EdgeInsets.all(10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          child: Container(
-            width: MediaQuery.of(context).size.width * 0.95,
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppBar(
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
-                  leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-                ),
-                Flexible(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 20, left: 20, right: 20),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: InteractiveViewer(
-                        panEnabled: true,
-                        minScale: 0.5,
-                        maxScale: 4.0,
-                        child: Image.network(
-                          imageUrl,
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.high,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return const Center(child: Padding(padding: EdgeInsets.all(40.0), child: CircularProgressIndicator(color: Colors.cyanAccent)));
-                          },
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            padding: const EdgeInsets.all(40),
-                            color: Colors.white.withOpacity(0.05),
-                            child: const Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 40),
-                                SizedBox(height: 8),
-                                Text('Failed to load image', style: TextStyle(color: Colors.white60)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullScreenImageViewer(path: path, title: title),
       ),
     );
   }
