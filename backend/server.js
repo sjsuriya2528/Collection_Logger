@@ -525,8 +525,46 @@ app.post('/api/collections', authenticateToken, upload.fields([
   }
 
   try {
-    const existing = await db.query('SELECT id FROM collections WHERE id = $1', [id]);
-    if (existing.rows.length > 0) return res.status(200).json({ message: 'Already synced' });
+    const existing = await db.query('SELECT * FROM collections WHERE id = $1', [id]);
+    
+    if (existing.rows.length > 0) {
+      const old = existing.rows[0];
+      const clean = (val) => (val || '').toString().trim();
+      const cleanLower = (val) => clean(val).toLowerCase();
+
+      const hasChanged = 
+        clean(old.bill_no) !== clean(bill_no) ||
+        clean(old.shop_name) !== clean(shop_name) ||
+        parseFloat(old.amount || 0) !== parseFloat(amount || 0) ||
+        cleanLower(old.payment_mode) !== cleanLower(payment_mode) ||
+        cleanLower(old.status) !== cleanLower(status) ||
+        clean(old.bill_proof) !== clean(billProofUrl) ||
+        clean(old.payment_proof) !== clean(paymentProofUrl) ||
+        parseFloat(old.cash_amount || 0) !== parseFloat(cash_amount || 0) ||
+        parseFloat(old.upi_amount || 0) !== parseFloat(upi_amount || 0);
+
+      const result = await db.query(
+        'UPDATE collections SET bill_no = $1, shop_name = $2, amount = $3, payment_mode = $4, status = $5, bill_proof = $6, payment_proof = $7, cash_amount = $8, upi_amount = $9 WHERE id = $10 RETURNING *',
+        [bill_no, shop_name, parseFloat(amount || 0), payment_mode, status || 'partial', billProofUrl || old.bill_proof, paymentProofUrl || old.payment_proof, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), id]
+      );
+
+      if (hasChanged) {
+        if (!req.user.name) {
+          const userRes = await db.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+          if (userRes.rows.length > 0) req.user.name = userRes.rows[0].name;
+        }
+        const billText = bill_no ? `Bill #${bill_no}` : 'No Bill No';
+        const modeText = payment_mode ? payment_mode.toString().toUpperCase() : 'N/A';
+        sendAdminNotification('Collection Edited (Sync)', `${req.user.name || 'An employee'} updated ${billText} for ${shop_name} (${modeText})`);
+        
+        await db.query(
+          'INSERT INTO system_updates (action_type, employee_name, details) VALUES ($1, $2, $3)',
+          ['edit', req.user.name || 'An employee', `${billText} for ${shop_name} (${modeText})`]
+        );
+      }
+      
+      return res.status(200).json({ message: 'Collection updated', ...result.rows[0] });
+    }
 
     await db.query(
       'INSERT INTO collections (id, employee_id, bill_no, shop_name, amount, payment_mode, date, status, bill_proof, payment_proof, cash_amount, upi_amount, group_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
