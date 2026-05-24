@@ -125,24 +125,28 @@ const uploadToCloudinary = async (filePath, folder = 'collections') => {
 };
 
 // Cloudinary Delete Helper
-const deleteCloudinaryFile = async (url) => {
-  if (!url || !url.includes('cloudinary.com')) {
-    // Handle local file cleanup if necessary
-    if (url && url.startsWith('/uploads/')) {
-      const localPath = path.join(__dirname, url);
-      if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+const deleteCloudinaryFile = async (urlStr) => {
+  if (!urlStr) return;
+  const urls = urlStr.split(',');
+  for (const url of urls) {
+    if (!url.includes('cloudinary.com')) {
+      // Handle local file cleanup if necessary
+      if (url && url.startsWith('/uploads/')) {
+        const localPath = path.join(__dirname, url);
+        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+      }
+      continue;
     }
-    return;
-  }
-  try {
-    const parts = url.split('/');
-    const lastPart = parts.pop(); 
-    const folder = parts.pop(); 
-    const publicId = `${folder}/${lastPart.split('.')[0]}`;
-    await cloudinary.uploader.destroy(publicId);
-    console.log(`Cloudinary file deleted: ${publicId}`);
-  } catch (err) {
-    console.error('Cloudinary Delete Error:', err);
+    try {
+      const parts = url.split('/');
+      const lastPart = parts.pop(); 
+      const folder = parts.pop(); 
+      const publicId = `${folder}/${lastPart.split('.')[0]}`;
+      await cloudinary.uploader.destroy(publicId);
+      console.log(`Cloudinary file deleted: ${publicId}`);
+    } catch (err) {
+      console.error('Cloudinary Delete Error:', err);
+    }
   }
 };
 
@@ -509,16 +513,23 @@ app.post('/api/upload', authenticateToken, upload.single('file'), async (req, re
 // --- COLLECTION ENDPOINTS ---
 
 app.post('/api/collections', authenticateToken, upload.fields([
-  { name: 'billProof', maxCount: 1 },
+  { name: 'billProof', maxCount: 10 },
   { name: 'paymentProof', maxCount: 1 }
 ]), async (req, res) => {
   const { id, bill_no, shop_name, amount, payment_mode, date, status, cash_amount, upi_amount, group_id } = req.body;
   
-  let billProofUrl = req.body.bill_proof || req.body.billProof || null;
-  let paymentProofUrl = req.body.payment_proof || req.body.paymentProof || null;
+  let billProofUrl = req.body.bill_proof ?? req.body.billProof ?? null;
+  let paymentProofUrl = req.body.payment_proof ?? req.body.paymentProof ?? null;
 
   if (req.files && req.files['billProof']) {
-    billProofUrl = await uploadToCloudinary(req.files['billProof'][0].path, 'bills');
+    const urls = [];
+    for (const file of req.files['billProof']) {
+      const url = await uploadToCloudinary(file.path, 'bills');
+      if (url) urls.push(url);
+    }
+    if (urls.length > 0) {
+      billProofUrl = billProofUrl ? `${billProofUrl},${urls.join(',')}` : urls.join(',');
+    }
   }
   if (req.files && req.files['paymentProof']) {
     paymentProofUrl = await uploadToCloudinary(req.files['paymentProof'][0].path, 'payments');
@@ -543,9 +554,26 @@ app.post('/api/collections', authenticateToken, upload.fields([
         parseFloat(old.cash_amount || 0) !== parseFloat(cash_amount || 0) ||
         parseFloat(old.upi_amount || 0) !== parseFloat(upi_amount || 0);
 
+      const finalBillProof = billProofUrl !== null ? billProofUrl : old.bill_proof;
+      const finalPaymentProof = paymentProofUrl !== null ? paymentProofUrl : old.payment_proof;
+
+      const oldBills = (old.bill_proof || '').split(',').filter(Boolean);
+      const newBills = (finalBillProof || '').split(',').filter(Boolean);
+      for (const url of oldBills) {
+        if (!newBills.includes(url)) {
+          const count = await db.query('SELECT COUNT(*) FROM collections WHERE bill_proof LIKE $1 AND id != $2', [`%${url}%`, id]);
+          if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(url);
+        }
+      }
+
+      if (old.payment_proof && old.payment_proof !== finalPaymentProof) {
+        const count = await db.query('SELECT COUNT(*) FROM collections WHERE payment_proof = $1 AND id != $2', [old.payment_proof, id]);
+        if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(old.payment_proof);
+      }
+
       const result = await db.query(
         'UPDATE collections SET bill_no = $1, shop_name = $2, amount = $3, payment_mode = $4, status = $5, bill_proof = $6, payment_proof = $7, cash_amount = $8, upi_amount = $9 WHERE id = $10 RETURNING *',
-        [bill_no, shop_name, parseFloat(amount || 0), payment_mode, status || 'partial', billProofUrl || old.bill_proof, paymentProofUrl || old.payment_proof, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), id]
+        [bill_no, shop_name, parseFloat(amount || 0), payment_mode, status || 'partial', finalBillProof, finalPaymentProof, parseFloat(cash_amount || 0), parseFloat(upi_amount || 0), id]
       );
 
       if (hasChanged) {
@@ -703,7 +731,7 @@ app.get('/api/collections/employee/:id', authenticateToken, async (req, res) => 
 });
 
 app.put('/api/collections/:id', authenticateToken, upload.fields([
-  { name: 'bill_proof', maxCount: 1 },
+  { name: 'bill_proof', maxCount: 10 },
   { name: 'payment_proof', maxCount: 1 }
 ]), async (req, res) => {
   const { id } = req.params;
@@ -714,11 +742,29 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
   const { bill_no, shop_name, amount, payment_mode, status, cash_amount, upi_amount } = req.body;
   
   try {
-    let billProofUrl = req.body.billProof || req.body.bill_proof || ownerCheck.rows[0].bill_proof;
-    let paymentProofUrl = req.body.paymentProof || req.body.payment_proof || ownerCheck.rows[0].payment_proof;
+    let billProofUrl = req.body.billProof ?? req.body.bill_proof;
+    if (billProofUrl === undefined || billProofUrl === null) {
+      billProofUrl = ownerCheck.rows[0].bill_proof;
+    }
+    
+    let paymentProofUrl = req.body.paymentProof ?? req.body.payment_proof;
+    if (paymentProofUrl === undefined || paymentProofUrl === null) {
+      paymentProofUrl = ownerCheck.rows[0].payment_proof;
+    }
 
-    if (req.files['bill_proof']) billProofUrl = await uploadToCloudinary(req.files['bill_proof'][0].path, 'bills');
-    if (req.files['payment_proof']) paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path, 'payments');
+    if (req.files && req.files['bill_proof']) {
+      const urls = [];
+      for (const file of req.files['bill_proof']) {
+        const url = await uploadToCloudinary(file.path, 'bills');
+        if (url) urls.push(url);
+      }
+      if (urls.length > 0) {
+        billProofUrl = billProofUrl ? `${billProofUrl},${urls.join(',')}` : urls.join(',');
+      }
+    }
+    if (req.files && req.files['payment_proof']) {
+      paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path, 'payments');
+    }
 
     // Remove restrictions that were wiping proofs based on status/mode
     // billProofUrl and paymentProofUrl should be kept if provided by the client
@@ -738,6 +784,20 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
       clean(old.payment_proof) !== clean(paymentProofUrl) ||
       parseFloat(old.cash_amount || 0) !== parseFloat(cash_amount || 0) ||
       parseFloat(old.upi_amount || 0) !== parseFloat(upi_amount || 0);
+
+    const oldBills = (old.bill_proof || '').split(',').filter(Boolean);
+    const newBills = (billProofUrl || '').split(',').filter(Boolean);
+    for (const url of oldBills) {
+      if (!newBills.includes(url)) {
+        const count = await db.query('SELECT COUNT(*) FROM collections WHERE bill_proof LIKE $1 AND id != $2', [`%${url}%`, id]);
+        if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(url);
+      }
+    }
+
+    if (old.payment_proof && old.payment_proof !== paymentProofUrl) {
+      const count = await db.query('SELECT COUNT(*) FROM collections WHERE payment_proof = $1 AND id != $2', [old.payment_proof, id]);
+      if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(old.payment_proof);
+    }
 
     const result = await db.query(
       'UPDATE collections SET bill_no = $1, shop_name = $2, amount = $3, payment_mode = $4, status = $5, bill_proof = $6, payment_proof = $7, cash_amount = $8, upi_amount = $9 WHERE id = $10 RETURNING *',
@@ -778,11 +838,14 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
     const deletedRecord = result.rows[0];
 
     if (deletedRecord.bill_proof) {
-      const count = await db.query('SELECT count(*) FROM collections WHERE bill_proof = $1', [deletedRecord.bill_proof]);
-      if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(deletedRecord.bill_proof);
+      const urls = deletedRecord.bill_proof.split(',').filter(Boolean);
+      for (const url of urls) {
+        const count = await db.query('SELECT count(*) FROM collections WHERE bill_proof LIKE $1 AND id != $2', [`%${url}%`, id]);
+        if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(url);
+      }
     }
     if (deletedRecord.payment_proof) {
-      const count = await db.query('SELECT count(*) FROM collections WHERE payment_proof = $1', [deletedRecord.payment_proof]);
+      const count = await db.query('SELECT count(*) FROM collections WHERE payment_proof = $1 AND id != $2', [deletedRecord.payment_proof, id]);
       if (parseInt(count.rows[0].count) === 0) await deleteCloudinaryFile(deletedRecord.payment_proof);
     }
 

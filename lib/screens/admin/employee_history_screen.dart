@@ -55,7 +55,31 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
       final data = await ApiService.getEmployeeCollections(widget.employeeId, auth.user!.token!);
-      setState(() => _collections = data);
+      _collections = data;
+      
+      final Map<String, int> finCounts = {};
+      final Map<String, int> finNumbers = {};
+      
+      final sortedColls = List.from(_collections)..sort((a, b) {
+        String dA = a['date'].toString();
+        String dB = b['date'].toString();
+        if (!dA.contains('Z') && !dA.contains('+')) dA += 'Z';
+        if (!dB.contains('Z') && !dB.contains('+')) dB += 'Z';
+        return (DateTime.tryParse(dA) ?? DateTime(0)).compareTo(DateTime.tryParse(dB) ?? DateTime(0));
+      });
+
+      for (var c in sortedColls) {
+        if ((c['status'] ?? 'partial').toString().toLowerCase().trim() == 'completed') {
+          final key = c['shop_name']?.toString().trim().toLowerCase() ?? "";
+          if (key.isNotEmpty) {
+            finCounts[key] = (finCounts[key] ?? 0) + 1;
+            finNumbers[c['id'].toString()] = finCounts[key]!;
+          }
+        }
+      }
+      _collectionFinNumbers = finNumbers;
+      
+      _updateFilteredData();
     } catch (e) {
       print('History Fetch Error: $e');
     } finally {
@@ -63,26 +87,14 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     }
   }
 
-  void _applyQuickFilter(String type) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    
-    if (type == 'Today') {
-      _startDate = today;
-      _endDate = today;
-    } else if (type == 'Yesterday') {
-      _startDate = today.subtract(const Duration(days: 1));
-      _endDate = today.subtract(const Duration(days: 1));
-    } else if (type == 'Last 7 Days') {
-      _startDate = today.subtract(const Duration(days: 7));
-      _endDate = today;
-    }
-    setState(() {});
-    Navigator.pop(context);
-  }
+  List<dynamic> _cachedFiltered = [];
+  double _totalAmount = 0;
+  double _cashTotal = 0;
+  double _upiTotal = 0;
+  double _chequeTotal = 0;
+  Map<String, int> _collectionFinNumbers = {};
 
-  @override
-  Widget build(BuildContext context) {
+  void _updateFilteredData() {
     final filtered = _collections.where((c) {
       // Date Filter
       bool matchesDate = true;
@@ -122,33 +134,61 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
       return matchesDate && matchesMode && matchesSearch && matchesStatus;
     }).toList();
 
-    // Summary Calculations
-    final totalAmount = filtered.fold(0.0, (sum, c) => sum + double.parse(c['amount'].toString()));
-    final cashTotal = filtered.fold(0.0, (s, c) {
-      final mode = c['payment_mode'].toString().toLowerCase();
-      if (mode == 'cash') return s + double.parse(c['amount'].toString());
-      if (mode == 'both') return s + double.parse((c['cash_amount'] ?? 0).toString());
-      return s;
-    });
-    final upiTotal = filtered.fold(0.0, (s, c) {
-      final mode = c['payment_mode'].toString().toLowerCase();
-      if (mode == 'upi') return s + double.parse(c['amount'].toString());
-      if (mode == 'both') return s + double.parse((c['upi_amount'] ?? 0).toString());
-      return s;
-    });
-    final chequeTotal = filtered.where((c) => c['payment_mode'].toString().toLowerCase() == 'cheque').fold(0.0, (s, c) => s + double.parse(c['amount'].toString()));
+    double total = 0;
+    double cash = 0;
+    double upi = 0;
+    double cheque = 0;
+    final Map<String, int> finCounts = {};
 
-
-
-    // Feature: n FIN (Completed bills count per shop)
-    final Map<String, int> shopFinCounts = {};
     for (var c in filtered) {
+      final amt = double.tryParse(c['amount'].toString()) ?? 0;
+      final mode = c['payment_mode'].toString().toLowerCase();
+      total += amt;
+      if (mode == 'cash') cash += amt;
+      else if (mode == 'upi') upi += amt;
+      else if (mode == 'cheque') cheque += amt;
+      else if (mode == 'both') {
+        cash += double.tryParse((c['cash_amount'] ?? 0).toString()) ?? 0;
+        upi += double.tryParse((c['upi_amount'] ?? 0).toString()) ?? 0;
+      }
+
       if ((c['status'] ?? 'partial').toString().toLowerCase().trim() == 'completed') {
         final key = c['shop_name']?.toString().trim().toLowerCase() ?? "";
-        if (key.isNotEmpty) shopFinCounts[key] = (shopFinCounts[key] ?? 0) + 1;
+        if (key.isNotEmpty) finCounts[key] = (finCounts[key] ?? 0) + 1;
       }
     }
 
+    setState(() {
+      _cachedFiltered = filtered;
+      _totalAmount = total;
+      _cashTotal = cash;
+      _upiTotal = upi;
+      _chequeTotal = cheque;
+    });
+  }
+
+  void _applyQuickFilter(String type) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    setState(() {
+      if (type == 'Today') {
+        _startDate = today;
+        _endDate = today;
+      } else if (type == 'Yesterday') {
+        _startDate = today.subtract(const Duration(days: 1));
+        _endDate = today.subtract(const Duration(days: 1));
+      } else if (type == 'Last 7 Days') {
+        _startDate = today.subtract(const Duration(days: 7));
+        _endDate = today;
+      }
+    });
+    _updateFilteredData();
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
@@ -160,7 +200,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
           IconButton(
             icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.cyanAccent),
             onPressed: () async {
-              if (filtered.isEmpty) {
+              if (_cachedFiltered.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('No records to export')),
                 );
@@ -174,7 +214,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
               try {
                 final pdf = await PdfService.generateEmployeeReport(
                   employeeName: widget.employeeName,
-                  collections: filtered,
+                  collections: _cachedFiltered,
                   startDate: _startDate,
                   endDate: _endDate,
                 );
@@ -215,7 +255,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
             backgroundColor: const Color(0xFF16213E),
             child: Column(
               children: [
-                _buildSummaryHeader(totalAmount, cashTotal, upiTotal, chequeTotal),
+                _buildSummaryHeader(_totalAmount, _cashTotal, _upiTotal, _chequeTotal),
                 if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all')
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -231,12 +271,13 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                           ),
                         ),
                         GestureDetector(
-                          onTap: () => setState(() { 
+                          onTap: () {
                             _startDate = null; 
                             _endDate = null; 
                             _selectedMode = 'all'; 
                             _selectedStatusFilter = 'all';
-                          }),
+                            _updateFilteredData();
+                          },
                           child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                         ),
                       ],
@@ -246,7 +287,10 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   child: TextField(
                     controller: _searchController,
-                    onChanged: (val) => setState(() => _searchQuery = val),
+                    onChanged: (val) {
+                      _searchQuery = val;
+                      _updateFilteredData();
+                    },
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       hintText: 'Search shop or bill no...',
@@ -257,7 +301,8 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                             icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 20),
                             onPressed: () {
                               _searchController.clear();
-                              setState(() => _searchQuery = "");
+                              _searchQuery = "";
+                              _updateFilteredData();
                             },
                           )
                         : null,
@@ -272,13 +317,13 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                 Expanded(
                   child: _isLoading 
                     ? const Center(child: CircularProgressIndicator(color: Colors.cyanAccent))
-                    : filtered.isEmpty
+                    : _cachedFiltered.isEmpty
                       ? _buildEmptyState()
                       : Builder(
                           builder: (context) {
                             // Grouping logic for Admin view
                             final Map<String, List<dynamic>> grouped = {};
-                            for (var c in filtered) {
+                            for (var c in _cachedFiltered) {
                               final gId = c['group_id']?.toString();
                               final dateStr = c['date'].toString();
                               final key = (gId != null && gId.isNotEmpty) 
@@ -299,15 +344,18 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                               return dateB.compareTo(dateA);
                             });
 
-                            return ListView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              itemCount: groupIds.length,
-                              itemBuilder: (context, index) {
-                                final gid = groupIds[index];
-                                final items = grouped[gid]!;
-                                return _buildGroupedItem(gid, items, shopFinCounts);
-                              },
+                            return Scrollbar(
+                              thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+                              child: ListView.builder(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                itemCount: groupIds.length,
+                                itemBuilder: (context, index) {
+                                  final gid = groupIds[index];
+                                  final items = grouped[gid]!;
+                                  return _buildGroupedItem(gid, items);
+                                },
+                              ),
                             );
                           },
                         ),
@@ -335,7 +383,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  Widget _buildGroupedItem(String groupId, List<dynamic> items, Map<String, int> shopFinCounts) {
+  Widget _buildGroupedItem(String groupId, List<dynamic> items) {
     final first = items.first;
     final bool isGroup = items.length > 1;
     final bool isExpanded = _expandedGroups.contains(groupId);
@@ -344,9 +392,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     String? sharedPaymentProof;
     if (isGroup) {
       final proofItems = items.where((element) => element['payment_mode'].toString().toLowerCase() != 'cash').toList();
-      if (proofItems.isNotEmpty) {
+      if (proofItems.length > 1) {
         final firstP = proofItems.first['payment_proof'];
-        if (firstP != null && proofItems.every((element) => element['payment_proof'] == firstP)) {
+        if (firstP != null && firstP.toString().trim().isNotEmpty && proofItems.every((element) => element['payment_proof'] == firstP)) {
           sharedPaymentProof = firstP;
         }
       }
@@ -428,21 +476,21 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                               ),
-                              if (shopFinCounts[first['shop_name'].toString().trim().toLowerCase()] != null) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
-                                  ),
-                                  child: Text(
-                                    '${shopFinCounts[first['shop_name'].toString().trim().toLowerCase()]} FIN',
-                                    style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
+                              if (_collectionFinNumbers[first['id'].toString()] != null) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
+                                      ),
+                                      child: Text(
+                                        '${_collectionFinNumbers[first['id'].toString()]} FIN',
+                                        style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ],
                             ],
                           ),
                           const SizedBox(height: 2),
@@ -454,16 +502,17 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                           ),
                           if (sharedPaymentProof != null) ...[
                             const SizedBox(height: 8),
-                            _buildProofChip('PAYMENT PROOF', sharedPaymentProof),
-                          ] else if (!isGroup && (first['bill_proof'] != null || first['payment_proof'] != null)) ...[
+                            _buildProofChip('PAYMENT PROOF', [sharedPaymentProof!]),
+                          ] else if (!isGroup && ((first['bill_proof'] != null && first['bill_proof'].toString().trim().isNotEmpty) || (first['payment_proof'] != null && first['payment_proof'].toString().trim().isNotEmpty))) ...[
                             const SizedBox(height: 8),
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
                               children: [
-                                if (first['bill_proof'] != null) _buildProofChip('BILL', first['bill_proof']),
-                                if (first['payment_proof'] != null) ...[
-                                  if (first['bill_proof'] != null) const SizedBox(width: 8),
-                                  _buildProofChip('PAY', first['payment_proof']),
-                                ],
+                                if (first['bill_proof'] != null && first['bill_proof'].toString().trim().isNotEmpty) 
+                                  _buildProofChip('BILL', first['bill_proof'].toString().split(',').where((e) => e.trim().isNotEmpty).toList()),
+                                if (first['payment_proof'] != null && first['payment_proof'].toString().trim().isNotEmpty) 
+                                  _buildProofChip('PAY', [first['payment_proof'].toString()]),
                               ],
                             ),
                           ],
@@ -477,12 +526,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                                    padding: EdgeInsets.zero,
                                    constraints: const BoxConstraints(),
                                    icon: const Icon(Icons.edit_rounded, size: 16, color: Colors.white38),
-                                   onPressed: () {
-                                     Navigator.push(
-                                       context, 
-                                       MaterialPageRoute(builder: (context) => AddCollectionScreen(initialItems: [Collection.fromMap(first)]))
-                                     ).then((_) => _fetchHistory());
-                                   },
+                                   onPressed: () => _showEditScreen(first),
                                  ),
                                  const SizedBox(width: 16),
                                  IconButton(
@@ -552,7 +596,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                       const Icon(Icons.qr_code_scanner_rounded, color: Colors.cyanAccent, size: 20),
                       const SizedBox(width: 12),
                       const Expanded(child: Text('Unified Payment Proof', style: TextStyle(color: Colors.white70, fontSize: 12))),
-                      _buildProofChip('VIEW', sharedPaymentProof),
+                      _buildProofChip('VIEW', [sharedPaymentProof!]),
                     ],
                   ),
                 ),
@@ -611,15 +655,21 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
           Row(
             children: [
               // Individual bill proofs
-              if (coll['billProof'] != null || coll['bill_proof'] != null) 
-                _buildProofChip('BILL', coll['billProof'] ?? coll['bill_proof']),
-              
-              if ((coll['paymentProof'] != null || coll['payment_proof'] != null) &&
-                  (coll['paymentProof'] ?? coll['payment_proof']) != sharedPaymentProof) ...[
-                if (coll['billProof'] != null || coll['bill_proof'] != null)
-                  const SizedBox(width: 8),
-                _buildProofChip('PAY', coll['paymentProof'] ?? coll['payment_proof']),
-              ],
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if ((coll['billProof'] ?? coll['bill_proof']) != null && (coll['billProof'] ?? coll['bill_proof']).toString().trim().isNotEmpty)
+                      _buildProofChip('BILL', (coll['billProof'] ?? coll['bill_proof']).toString().split(',').where((e) => e.trim().isNotEmpty).toList()),
+                    
+                    if ((coll['paymentProof'] ?? coll['payment_proof']) != null && 
+                        (coll['paymentProof'] ?? coll['payment_proof']).toString().trim().isNotEmpty &&
+                        (coll['paymentProof'] ?? coll['payment_proof']) != sharedPaymentProof)
+                      _buildProofChip('PAY', [(coll['paymentProof'] ?? coll['payment_proof']).toString()]),
+                  ],
+                ),
+              ),
                const Spacer(),
                IconButton(
                  padding: EdgeInsets.zero,
@@ -718,9 +768,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  Widget _buildProofChip(String label, String path) {
+  Widget _buildProofChip(String label, List<String> paths) {
     return GestureDetector(
-      onTap: () => _showImageViewer(path, label),
+      onTap: () => _showImageViewer(paths, label),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
@@ -740,11 +790,11 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  void _showImageViewer(String path, String title) {
+  void _showImageViewer(List<String> paths, String title) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullScreenImageViewer(path: path, title: title),
+        builder: (context) => FullScreenImageViewer(paths: paths, title: title),
       ),
     );
   }
@@ -925,253 +975,12 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     );
   }
 
-  void _showEditBottomSheet(dynamic coll) {
-    final billController = TextEditingController(text: coll['bill_no']);
-    final shopController = TextEditingController(text: coll['shop_name']);
-    final amountController = TextEditingController(text: coll['amount'].toString());
-    final cashController = TextEditingController(text: (coll['cash_amount'] ?? 0).toString());
-    final upiController = TextEditingController(text: (coll['upi_amount'] ?? 0).toString());
-    String mode = coll['payment_mode'].toString().toLowerCase();
-    String status = coll['status'] ?? 'partial';
-    String? billProof = coll['bill_proof'];
-    String? paymentProof = coll['payment_proof'];
-    final picker = ImagePicker();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF16213E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
-      builder: (context) {
-        bool isSaving = false;
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            Future<void> pickImg(bool isBill) async {
-              showModalBottomSheet(
-                context: context,
-                backgroundColor: const Color(0xFF1A1A2E),
-                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                builder: (context) => Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 8),
-                    Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-                    const SizedBox(height: 16),
-                    ListTile(
-                      leading: const Icon(Icons.photo_library_rounded, color: Colors.cyanAccent),
-                      title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white)),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final picked = await picker.pickImage(
-                          source: ImageSource.gallery, 
-                          maxWidth: 1800,
-                          maxHeight: 1800,
-                          imageQuality: 85,
-                        );
-                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.camera_alt_rounded, color: Colors.cyanAccent),
-                      title: const Text('Take a Photo', style: TextStyle(color: Colors.white)),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final picked = await picker.pickImage(
-                          source: ImageSource.camera, 
-                          maxWidth: 1800,
-                          maxHeight: 1800,
-                          imageQuality: 85,
-                        );
-                        if (picked != null) setModalState(() { if (isBill) billProof = picked.path; else paymentProof = picked.path; });
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              );
-            }
-
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-                top: 24, left: 24, right: 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
-                    const SizedBox(height: 24),
-                    const Text('Edit Record', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    const Text('Update the collection details below', style: TextStyle(color: Colors.white38, fontSize: 14)),
-                    const SizedBox(height: 32),
-                    _buildStyledEditField(billController, 'Bill Number', Icons.receipt_long_rounded, isNumber: true),
-                    const SizedBox(height: 16),
-                    _buildStyledEditField(shopController, 'Shop Name', Icons.storefront_rounded),
-                    const SizedBox(height: 16),
-                    _buildStyledEditField(amountController, 'Amount (₹)', Icons.currency_rupee_rounded, isNumber: true, isReadOnly: mode == 'both'),
-                    if (mode == 'both') ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(child: _buildStyledEditField(cashController, 'Cash portion', Icons.money, isNumber: true, onChanged: (v) {
-                            double c = double.tryParse(v) ?? 0;
-                            double u = double.tryParse(upiController.text) ?? 0;
-                            amountController.text = (c + u).toString();
-                          })),
-                          const SizedBox(width: 12),
-                          Expanded(child: _buildStyledEditField(upiController, 'UPI portion', Icons.account_balance_wallet, isNumber: true, onChanged: (v) {
-                            double u = double.tryParse(v) ?? 0;
-                            double c = double.tryParse(cashController.text) ?? 0;
-                            amountController.text = (c + u).toString();
-                          })),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    const Text('PAYMENT MODE', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: ['cash', 'upi', 'cheque', 'both'].map((m) {
-                        final isSelected = mode == m;
-                        return Expanded(
-                          child: GestureDetector(
-                            onTap: () => setModalState(() {
-                              mode = m;
-                              if (m != 'upi' && m != 'both' && m != 'cheque') paymentProof = null;
-                              if (m != 'both') {
-                                cashController.text = '0';
-                                upiController.text = '0';
-                              }
-                            }),
-                            child: Container(
-                              margin: const EdgeInsets.only(right: 8),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                color: isSelected ? Colors.cyanAccent : Colors.white.withOpacity(0.05),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  m.toUpperCase(),
-                                  style: TextStyle(color: isSelected ? const Color(0xFF1A1A2E) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text('PAYMENT STATUS', style: TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: ['partial', 'completed'].map((s) {
-                        final isSelected = status == s;
-                        return Expanded(
-                          child: GestureDetector(
-                            onTap: () => setModalState(() {
-                              status = s;
-                              if (s != 'completed') billProof = null;
-                            }),
-                            child: Container(
-                              margin: const EdgeInsets.only(right: 8),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                color: isSelected ? (s == 'completed' ? Colors.greenAccent : Colors.orangeAccent) : Colors.white.withOpacity(0.05),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  s.toUpperCase(),
-                                  style: TextStyle(color: isSelected ? const Color(0xFF1A1A2E) : Colors.white70, fontWeight: FontWeight.bold, fontSize: 12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 32),
-                    
-                    if (status == 'completed') ...[
-                      _buildEditProofButton(
-                        label: 'Completed Bill Screenshot',
-                        path: billProof,
-                        onTap: () => pickImg(true),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    if (mode == 'upi' || mode == 'both' || mode == 'cheque') ...[
-                      _buildEditProofButton(
-                        label: 'Payment Screenshot / Cheque Photo',
-                        path: paymentProof,
-                        onTap: () => pickImg(false),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-
-                    const SizedBox(height: 40),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: isSaving ? null : () async {
-                          setModalState(() => isSaving = true);
-                          try {
-                            final auth = Provider.of<AuthProvider>(context, listen: false);
-                            final updatedData = await ApiService.updateCollection(
-                              coll['id'].toString(),
-                              {
-                                'bill_no': billController.text,
-                                'shop_name': shopController.text,
-                                'amount': amountController.text,
-                                'payment_mode': mode,
-                                'status': status,
-                                'cash_amount': mode == 'both' ? cashController.text : (mode == 'cash' ? amountController.text : '0'),
-                                'upi_amount': mode == 'both' ? upiController.text : (mode == 'upi' ? amountController.text : '0'),
-                              },
-                              auth.user!.token!,
-                              billProofPath: billProof,
-                              paymentProofPath: paymentProof,
-                            );
-                            if (updatedData != null && mounted) {
-                              Navigator.pop(context);
-                              _fetchHistory();
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Changes saved successfully')));
-                            } else if (mounted) {
-                              setModalState(() => isSaving = false);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save changes')));
-                            }
-                          } catch (e) {
-                            if (mounted) {
-                              setModalState(() => isSaving = false);
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-                            }
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.cyanAccent, 
-                          foregroundColor: const Color(0xFF1A1A2E), 
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          disabledBackgroundColor: Colors.cyanAccent.withOpacity(0.3),
-                        ),
-                        child: isSaving 
-                          ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Color(0xFF1A1A2E), strokeWidth: 2))
-                          : const Text('SAVE CHANGES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+  void _showEditScreen(dynamic collMap) {
+    final coll = Collection.fromMap(collMap as Map<String, dynamic>);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => AddCollectionScreen(initialItems: [coll])),
+    ).then((_) => _fetchHistory());
   }
 
   Widget _buildStyledEditField(TextEditingController controller, String label, IconData icon, {bool isNumber = false, bool isReadOnly = false, Function(String)? onChanged}) {

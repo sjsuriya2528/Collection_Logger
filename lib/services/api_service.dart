@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../models/user.dart';
 import '../models/collection.dart';
 
 class ApiService {
   // Use this for local testing (Ensure phone and PC are on same Wi-Fi)
-  //static const String baseUrl = 'http://172.19.75.227:3000';
+  // static const String baseUrl = 'http://10.200.134.227:3000';
   
   // Use this for production
   static const String baseUrl = 'https://collection.acmagencies.store';
@@ -16,6 +17,11 @@ class ApiService {
     return '$serverBase$path';
   }
 
+  // Optimized background JSON parsing
+  static Future<dynamic> _parseJson(String body) async {
+    return compute(jsonDecode, body);
+  }
+
   static Future<void> requestOTP(String email) async {
     final response = await http.post(
       Uri.parse('$baseUrl/api/auth/forgot-password'),
@@ -23,7 +29,7 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
     );
     if (response.statusCode != 200) {
-      throw Exception(jsonDecode(response.body)['message'] ?? 'Failed to send OTP');
+      throw Exception((await _parseJson(response.body))['message'] ?? 'Failed to send OTP');
     }
   }
 
@@ -34,7 +40,7 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
     );
     if (response.statusCode != 200) {
-      throw Exception(jsonDecode(response.body)['message'] ?? 'Invalid OTP');
+      throw Exception((await _parseJson(response.body))['message'] ?? 'Invalid OTP');
     }
   }
 
@@ -45,7 +51,7 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
     );
     if (response.statusCode != 200) {
-      throw Exception(jsonDecode(response.body)['message'] ?? 'Reset failed');
+      throw Exception((await _parseJson(response.body))['message'] ?? 'Reset failed');
     }
   }
 
@@ -70,32 +76,35 @@ class ApiService {
     }
 
     // Add files if they exist (local paths) or add as string if already a URL
-    if (collection.billProof != null) {
-      if (collection.billProof!.startsWith('http') || collection.billProof!.startsWith('/uploads')) {
-        request.fields['billProof'] = collection.billProof!;
-      } else {
-        request.files.add(await http.MultipartFile.fromPath('billProof', collection.billProof!));
+    if (collection.billProof != null && collection.billProof!.trim().isNotEmpty) {
+      List<String> urls = [];
+      for (final proof in collection.billProofsList) {
+        if (proof.startsWith('http') || proof.startsWith('/uploads')) {
+          urls.add(proof);
+        } else {
+          request.files.add(await http.MultipartFile.fromPath('billProof', proof));
+        }
       }
+      if (urls.isNotEmpty) request.fields['bill_proof'] = urls.join(',');
+    } else {
+      request.fields['bill_proof'] = '';
     }
     
-    if (collection.paymentProof != null) {
+    if (collection.paymentProof != null && collection.paymentProof!.trim().isNotEmpty) {
       if (collection.paymentProof!.startsWith('http') || collection.paymentProof!.startsWith('/uploads')) {
-        request.fields['paymentProof'] = collection.paymentProof!;
+        request.fields['payment_proof'] = collection.paymentProof!;
       } else {
-        request.files.add(await http.MultipartFile.fromPath('paymentProof', collection.paymentProof!));
+        request.files.add(await http.MultipartFile.fromPath('payment_proof', collection.paymentProof!));
       }
+    } else {
+      request.fields['payment_proof'] = '';
     }
 
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
     
-    if (response.statusCode == 201) {
-      return jsonDecode(response.body);
-    } else if (response.statusCode == 200) {
-      // Already exists on server. 
-      // We don't call updateCollection here to avoid redundant notifications during background sync.
-      // The server already has the record.
-      return jsonDecode(response.body);
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return await _parseJson(response.body);
     } else {
       print('Sync Error: ${response.body}');
       return null;
@@ -111,7 +120,7 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(jsonDecode(response.body)['message'] ?? 'Failed to send OTP');
+      throw Exception((await _parseJson(response.body))['message'] ?? 'Failed to send OTP');
     }
   }
 
@@ -125,7 +134,7 @@ class ApiService {
       },
     );
     if (response.statusCode != 200) {
-      throw Exception(jsonDecode(response.body)['message'] ?? 'Change failed');
+      throw Exception((await _parseJson(response.body))['message'] ?? 'Change failed');
     }
   }
 
@@ -140,7 +149,7 @@ class ApiService {
       final response = await http.Response.fromStream(streamedResponse);
       
       if (response.statusCode == 200) {
-        return jsonDecode(response.body)['url'];
+        return (await _parseJson(response.body))['url'];
       }
       return null;
     } catch (e) {
@@ -149,53 +158,39 @@ class ApiService {
     }
   }
 
-
-
   static Future<Map<String, dynamic>> signup(String name, String email, String password, String role, {String? adminSecretCode}) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/signup'),
-        body: jsonEncode({
-          'name': name,
-          'email': email,
-          'password': password,
-          'role': role,
-          'admin_secret_code': adminSecretCode,
-        }),
-        headers: {'Content-Type': 'application/json'},
-      );
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/auth/signup'),
+      body: jsonEncode({
+        'name': name,
+        'email': email,
+        'password': password,
+        'role': role,
+        'admin_secret_code': adminSecretCode,
+      }),
+      headers: {'Content-Type': 'application/json'},
+    );
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception(jsonDecode(response.body)['message'] ?? 'Signup failed');
-      }
-    } catch (e) {
-      print('Signup Error: $e');
-      rethrow;
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return await _parseJson(response.body);
+    } else {
+      throw Exception((await _parseJson(response.body))['message'] ?? 'Signup failed');
     }
   }
 
   static Future<Map<String, dynamic>> login(String email, String password) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/login'),
-        body: jsonEncode({'email': email, 'password': password}),
-        headers: {'Content-Type': 'application/json'},
-      );
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/auth/login'),
+      body: jsonEncode({'email': email, 'password': password}),
+      headers: {'Content-Type': 'application/json'},
+    );
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        print('Login Error: ${response.statusCode} - ${response.body}');
-        throw Exception('Login failed: ${response.body}');
-      }
-    } catch (e) {
-      print('Network Error: $e');
-      rethrow;
+    if (response.statusCode == 200) {
+      return await _parseJson(response.body);
+    } else {
+      throw Exception('Login failed: ${response.body}');
     }
   }
-
 
   static Future<List<dynamic>> getEmployees(String token) async {
     final response = await http.get(
@@ -203,25 +198,20 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return await _parseJson(response.body);
     }
     return [];
   }
 
   static Future<List<dynamic>> getMyCollections(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/collections/mine'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to fetch my collections');
-      }
-    } catch (e) {
-      print('Fetch Error: $e');
-      throw e;
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/collections/mine'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      return await _parseJson(response.body);
+    } else {
+      throw Exception('Failed to fetch my collections');
     }
   }
 
@@ -241,19 +231,14 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getEmployeeCollections(String employeeId, String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/collections/employee/$employeeId'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to load employee history');
-      }
-    } catch (e) {
-      print('Get Employee History Error: $e');
-      rethrow;
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/collections/employee/$employeeId'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      return await _parseJson(response.body);
+    } else {
+      throw Exception('Failed to load employee history');
     }
   }
 
@@ -263,80 +248,72 @@ class ApiService {
     String token,
     {String? billProofPath, String? paymentProofPath}
   ) async {
-    try {
-      final request = http.MultipartRequest('PUT', Uri.parse('$baseUrl/api/collections/$collectionId'));
-      request.headers['Authorization'] = 'Bearer $token';
-      
-      // Add text fields
-      request.fields.addAll(fields);
-      
-      // Add files if provided, or preserve existing URLs
-      if (billProofPath != null) {
-        if (billProofPath.startsWith('http') || billProofPath.startsWith('/uploads')) {
-          request.fields['bill_proof'] = billProofPath;
-        } else {
-          request.files.add(await http.MultipartFile.fromPath('bill_proof', billProofPath));
+    final request = http.MultipartRequest('PUT', Uri.parse('$baseUrl/api/collections/$collectionId'));
+    request.headers['Authorization'] = 'Bearer $token';
+    request.fields.addAll(fields);
+    
+    if (billProofPath != null) {
+      List<String> urls = [];
+      if (billProofPath.trim().isNotEmpty) {
+        for (final proof in billProofPath.split(',').where((e) => e.trim().isNotEmpty)) {
+          if (proof.startsWith('http') || proof.startsWith('/uploads')) {
+            urls.add(proof);
+          } else {
+            request.files.add(await http.MultipartFile.fromPath('bill_proof', proof));
+          }
         }
       }
-      
-      if (paymentProofPath != null) {
-        if (paymentProofPath.startsWith('http') || paymentProofPath.startsWith('/uploads')) {
-          request.fields['payment_proof'] = paymentProofPath;
-        } else {
-          request.files.add(await http.MultipartFile.fromPath('payment_proof', paymentProofPath));
-        }
-      }
-      
-      final response = await request.send();
-      if (response.statusCode == 200) {
-        final respStr = await response.stream.bytesToString();
-        return jsonDecode(respStr);
-      }
-      return null;
-    } catch (e) {
-      print('Update Collection Error: $e');
-      return null;
+      request.fields['bill_proof'] = urls.join(',');
     }
+    
+    if (paymentProofPath != null) {
+      if (paymentProofPath.trim().isEmpty) {
+        request.fields['payment_proof'] = '';
+      } else if (paymentProofPath.startsWith('http') || paymentProofPath.startsWith('/uploads')) {
+        request.fields['payment_proof'] = paymentProofPath;
+      } else {
+        request.files.add(await http.MultipartFile.fromPath('payment_proof', paymentProofPath));
+      }
+    }
+    
+    final response = await request.send();
+    if (response.statusCode == 200) {
+      final respStr = await response.stream.bytesToString();
+      return await _parseJson(respStr);
+    }
+    return null;
   }
 
   static Future<bool> deleteCollection(String collectionId, String token) async {
-    try {
-      final response = await http.delete(
-        Uri.parse('$baseUrl/api/collections/$collectionId'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      return response.statusCode == 200;
-    } catch (e) {
-      print('Delete Collection Error: $e');
-      return false;
-    }
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/collections/$collectionId'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return response.statusCode == 200;
   }
+
   static Future<Map<String, dynamic>> getAdminDashboard(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/api/admin/dashboard'),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return await _parseJson(response.body);
     } else {
       throw Exception('Failed to load admin dashboard');
     }
   }
 
   static Future<List<dynamic>> getAllCollections(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/admin/collections'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to load all collections');
-      }
-    } catch (e) {
-      print('Get All Collections Error: $e');
-      rethrow;
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/admin/collections'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      return await _parseJson(response.body);
+    } else {
+      throw Exception('Failed to load all collections');
     }
   }
 }
+

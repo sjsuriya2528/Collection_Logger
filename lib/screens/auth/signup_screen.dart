@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 import '../../providers/auth_provider.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -96,30 +97,34 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                         ],
                       ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildTextField(
-                              controller: _nameController,
-                              label: 'Full Name',
-                              icon: Icons.person_outline_rounded,
-                            ),
-                            const SizedBox(height: 20),
-                            _buildTextField(
-                              controller: _emailController,
-                              label: 'Email Address',
-                              icon: Icons.alternate_email_rounded,
-                              keyboardType: TextInputType.emailAddress,
-                            ),
-                            const SizedBox(height: 20),
-                            _buildTextField(
-                              controller: _passwordController,
-                              label: 'Password',
-                              icon: Icons.lock_outline_rounded,
-                              isPassword: true,
-                            ),
+                      child: AutofillGroup(
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildTextField(
+                                controller: _nameController,
+                                label: 'Full Name',
+                                icon: Icons.person_outline_rounded,
+                                autofillHints: [AutofillHints.name],
+                              ),
+                              const SizedBox(height: 20),
+                              _buildTextField(
+                                controller: _emailController,
+                                label: 'Email Address',
+                                icon: Icons.alternate_email_rounded,
+                                keyboardType: TextInputType.emailAddress,
+                                autofillHints: [AutofillHints.email],
+                              ),
+                              const SizedBox(height: 20),
+                              _buildTextField(
+                                controller: _passwordController,
+                                label: 'Password',
+                                icon: Icons.lock_outline_rounded,
+                                isPassword: true,
+                                autofillHints: [AutofillHints.newPassword],
+                              ),
                             const SizedBox(height: 32),
                             
                             // Role Selection Chips
@@ -165,6 +170,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                           adminSecretCode: _role == 'admin' ? _adminSecretController.text.trim() : null,
                                         );
                                         if (success && mounted) {
+                                          TextInput.finishAutofillContext();
                                           Navigator.pop(context);
                                           ScaffoldMessenger.of(context).showSnackBar(
                                             const SnackBar(content: Text('Account created successfully!'), backgroundColor: Colors.greenAccent),
@@ -192,6 +198,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                       ),
                     ),
+                  ),
                     
                     const SizedBox(height: 32),
                     Row(
@@ -272,9 +279,11 @@ class _SignupScreenState extends State<SignupScreen> {
     bool isPassword = false,
     TextInputType keyboardType = TextInputType.text,
     int? minLength,
+    Iterable<String>? autofillHints,
   }) {
     return TextFormField(
       controller: controller,
+      autofillHints: autofillHints,
       obscureText: isPassword && _obscurePassword,
       keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white, fontSize: 15),

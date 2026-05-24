@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
@@ -80,7 +81,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.white),
-            onPressed: () => auth.logout(),
+            onPressed: () => _showLogoutConfirmation(context, auth),
           ),
         ],
       ),
@@ -89,52 +90,56 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           await collProvider.syncAllPending(auth.user!.token!);
           await collProvider.pullFromServer(auth.user!.token!, auth.user!.id);
         },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(auth.user?.name ?? 'User'),
-              const SizedBox(height: 24),
-              _buildTotalCard(collProvider.todayTotal),
-              const SizedBox(height: 16),
-              _buildModeCards(collProvider.modeBreakdown),
-              const SizedBox(height: 32),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: RepaintBoundary(
+          child: Scrollbar(
+            thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Recent Collections',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                  _buildHeader(auth.user?.name ?? 'User'),
+                  const SizedBox(height: 24),
+                  _buildTotalCard(collProvider.todayTotal),
+                  const SizedBox(height: 16),
+                  _buildModeCards(collProvider.modeBreakdown),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Recent Collections',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.push(
+                          context, 
+                          MaterialPageRoute(builder: (context) => const CollectionHistoryScreen())
+                        ),
+                        child: const Text('View All', style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: () => Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (context) => const CollectionHistoryScreen())
-                    ),
-                    child: const Text('View All', style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  Builder(
+                    builder: (context) {
+                      final recentCollections = collProvider.collections.take(5).toList();
+                      
+                      return ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: recentCollections.length,
+                        itemBuilder: (context, index) {
+                          return _buildCollectionItem(recentCollections[index], collProvider.collectionFinNumbers);
+                        },
+                      );
+                    }
                   ),
+                  const SizedBox(height: 100),
                 ],
               ),
-              const SizedBox(height: 12),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: collProvider.collections.take(5).length, // Show only recent 5
-                itemBuilder: (context, index) {
-              final Map<String, int> shopFinCounts = {};
-              for (var c in collProvider.collections) {
-                if (c.status.toLowerCase().trim() == 'completed') {
-                  final key = c.shopName.trim().toLowerCase();
-                  shopFinCounts[key] = (shopFinCounts[key] ?? 0) + 1;
-                }
-              }
-              return _buildCollectionItem(collProvider.collections[index], shopFinCounts);
-            },
-          ),
-              const SizedBox(height: 100),
-            ],
+            ),
           ),
         ),
       ),
@@ -287,14 +292,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
-  Widget _buildCollectionItem(Collection coll, Map<String, int> shopFinCounts) {
+  Widget _buildCollectionItem(Collection coll, Map<String, int> collectionFinNumbers) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: const Color(0xFF25253A),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: Colors.white10),
       ),
       child: Row(
         children: [
@@ -320,7 +325,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (shopFinCounts[coll.shopName.trim().toLowerCase()] != null) ...[
+                    if (collectionFinNumbers[coll.id] != null) ...[
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -330,7 +335,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
                         ),
                         child: Text(
-                          '${shopFinCounts[coll.shopName.trim().toLowerCase()]} FIN',
+                          '${collectionFinNumbers[coll.id]} FIN',
                           style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -473,6 +478,35 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showLogoutConfirmation(BuildContext context, AuthProvider auth) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Confirm Logout', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to log out?', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              auth.logout();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Logout', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }

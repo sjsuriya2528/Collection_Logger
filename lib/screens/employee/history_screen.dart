@@ -57,31 +57,34 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   Widget build(BuildContext context) {
     final collProvider = Provider.of<CollectionProvider>(context);
     
-    final filteredCollections = collProvider.collections.where((c) {
-      // Date Filter
+    // Optimized: Single pass over the collections list to do everything
+    final List<Collection> filtered = [];
+    double total = 0;
+    double cash = 0;
+    double upi = 0;
+    double cheque = 0;
+    final Map<String, List<Collection>> grouped = {};
+
+    for (var c in collProvider.collections) {
+      // 1. Filtering
       bool matchesDate = true;
       if (_startDate != null && _endDate != null) {
-        final rawDate = c.date;
-        final localDate = rawDate.toLocal();
-        final d = DateTime(localDate.year, localDate.month, localDate.day);
+        final d = DateTime(c.date.year, c.date.month, c.date.day);
         matchesDate = d.isAfter(_startDate!.subtract(const Duration(days: 1))) && 
                       d.isBefore(_endDate!.add(const Duration(days: 1)));
       }
 
-      // Mode Filter
       bool matchesMode = true;
       if (_selectedMode != 'all') {
         final mode = c.paymentMode.name.toLowerCase();
         matchesMode = mode == _selectedMode || (_selectedMode == 'upi' && mode == 'both');
       }
 
-      // Status Filter
       bool matchesStatus = true;
       if (_selectedStatusFilter != 'all') {
         matchesStatus = c.status.toLowerCase() == _selectedStatusFilter;
       }
 
-      // Search Filter
       bool matchesSearch = true;
       if (_searchQuery.isNotEmpty) {
         final query = _searchQuery.toLowerCase();
@@ -89,25 +92,35 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                         c.billNo.toLowerCase().contains(query);
       }
 
-      return matchesDate && matchesMode && matchesSearch && matchesStatus;
-    }).toList();
+      if (matchesDate && matchesMode && matchesSearch && matchesStatus) {
+        filtered.add(c);
+        
+        // 2. Summary Calculations
+        total += c.amount;
+        if (c.paymentMode == PaymentMode.cash) cash += c.amount;
+        else if (c.paymentMode == PaymentMode.upi) upi += c.amount;
+        else if (c.paymentMode == PaymentMode.cheque) cheque += c.amount;
+        else if (c.paymentMode == PaymentMode.both) {
+          cash += c.cashAmount;
+          upi += c.upiAmount;
+        }
 
-    // Summary Calculations
-    final totalAmount = filteredCollections.fold(0.0, (sum, c) => sum + c.amount);
-    final cashTotal = filteredCollections.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.cash ? c.amount : (c.paymentMode == PaymentMode.both ? c.cashAmount : 0)));
-    final upiTotal = filteredCollections.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.upi ? c.amount : (c.paymentMode == PaymentMode.both ? c.upiAmount : 0)));
-    final chequeTotal = filteredCollections.where((c) => c.paymentMode == PaymentMode.cheque).fold(0.0, (s, c) => s + c.amount);
-
-
-
-    // Feature: n FIN (Completed bills count per shop)
-    final Map<String, int> shopFinCounts = {};
-    for (var c in filteredCollections) {
-      if (c.status.toLowerCase().trim() == 'completed') {
-        final key = c.shopName.trim().toLowerCase();
-        shopFinCounts[key] = (shopFinCounts[key] ?? 0) + 1;
+        // 4. Grouping Logic
+        final String timeKey = DateFormat('yyyyMMddHHmm').format(c.date);
+        final gKey = (c.groupId != null && c.groupId!.isNotEmpty) 
+          ? c.groupId! 
+          : "${c.shopName}_$timeKey";
+        if (!grouped.containsKey(gKey)) grouped[gKey] = [];
+        grouped[gKey]!.add(c);
       }
     }
+
+    final groupIds = grouped.keys.toList();
+    groupIds.sort((a, b) {
+      final dateA = grouped[a]!.first.date;
+      final dateB = grouped[b]!.first.date;
+      return dateB.compareTo(dateA);
+    });
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
@@ -148,7 +161,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                     )
                   : null,
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.05),
+                fillColor: const Color(0xFF25253A),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(0.05))),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.cyanAccent, width: 1)),
@@ -157,7 +170,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
           ),
           
           // Summary Header
-          _buildSummaryHeader(totalAmount, cashTotal, upiTotal, chequeTotal),
+          _buildSummaryHeader(total, cash, upi, cheque),
 
           if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all')
             Padding(
@@ -186,34 +199,19 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
               ),
             ),
           Expanded(
-            child: filteredCollections.isEmpty
+            child: filtered.isEmpty
               ? _buildEmptyState()
-              : Builder(
-                  builder: (context) {
-                    final Map<String, List<Collection>> grouped = {};
-                    for (var c in filteredCollections) {
-                      final String timeKey = DateFormat('yyyyMMddHHmm').format(c.date);
-                      final key = (c.groupId != null && c.groupId!.isNotEmpty) 
-                        ? c.groupId! 
-                        : "${c.shopName}_$timeKey";
-                      if (!grouped.containsKey(key)) grouped[key] = [];
-                      grouped[key]!.add(c);
-                    }
-                    final groupIds = grouped.keys.toList();
-                    groupIds.sort((a, b) {
-                      final dateA = grouped[a]!.first.date;
-                      final dateB = grouped[b]!.first.date;
-                      return dateB.compareTo(dateA);
-                    });
-
-                    return RefreshIndicator(
-                      color: Colors.cyanAccent,
-                      backgroundColor: const Color(0xFF1A1A2E),
-                      onRefresh: () async {
-                        final auth = Provider.of<AuthProvider>(context, listen: false);
-                        final provider = Provider.of<CollectionProvider>(context, listen: false);
-                        await provider.pullFromServer(auth.user!.token!, auth.user!.id.toString());
-                      },
+              : RefreshIndicator(
+                  color: Colors.cyanAccent,
+                  backgroundColor: const Color(0xFF1A1A2E),
+                  onRefresh: () async {
+                    final auth = Provider.of<AuthProvider>(context, listen: false);
+                    final provider = Provider.of<CollectionProvider>(context, listen: false);
+                    await provider.pullFromServer(auth.user!.token!, auth.user!.id.toString());
+                  },
+                  child: RepaintBoundary(
+                    child: Scrollbar(
+                      thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
                       child: ListView.builder(
                         padding: const EdgeInsets.all(20),
                         physics: const AlwaysScrollableScrollPhysics(), // Ensures swipe works even if list is short
@@ -221,13 +219,14 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                         itemBuilder: (context, index) {
                           final gid = groupIds[index];
                           final items = grouped[gid]!;
-                          return _buildGroupedItem(gid, items, shopFinCounts);
+                          return _buildGroupedItem(collProvider, gid, items);
                         },
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
           ),
+
         ],
       ),
     );
@@ -428,7 +427,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     );
   }
 
-  Widget _buildGroupedItem(String groupId, List<Collection> items, Map<String, int> shopFinCounts) {
+  Widget _buildGroupedItem(CollectionProvider collProvider, String groupId, List<Collection> items) {
     final first = items.first;
     final bool isGroup = items.length > 1;
     final bool isExpanded = _expandedGroups.contains(groupId);
@@ -437,9 +436,9 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     String? sharedPaymentProof;
     if (isGroup) {
       final proofItems = items.where((element) => element.paymentMode != PaymentMode.cash).toList();
-      if (proofItems.isNotEmpty) {
+      if (proofItems.length > 1) {
         final firstP = proofItems.first.paymentProof;
-        if (firstP != null && proofItems.every((element) => element.paymentProof == firstP)) {
+        if (firstP != null && firstP.isNotEmpty && proofItems.every((element) => element.paymentProof == firstP)) {
           sharedPaymentProof = firstP;
         }
       }
@@ -448,9 +447,9 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: const Color(0xFF25253A),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: Colors.white10),
       ),
       child: Column(
         children: [
@@ -481,7 +480,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.greenAccent.withOpacity(0.1),
+                                color: const Color(0xFF1E3A2E),
                                 borderRadius: BorderRadius.circular(4),
                                 border: Border.all(color: Colors.greenAccent.withOpacity(0.5), width: 0.5),
                               ),
@@ -522,7 +521,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                               ),
-                              if (shopFinCounts[first.shopName.trim().toLowerCase()] != null) ...[
+                              if (collProvider.collectionFinNumbers[first.id] != null) ...[
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -532,7 +531,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                                     border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
                                   ),
                                   child: Text(
-                                    '${shopFinCounts[first.shopName.trim().toLowerCase()]} FIN',
+                                    '${collProvider.collectionFinNumbers[first.id]} FIN',
                                     style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
                                   ),
                                 ),
@@ -548,16 +547,15 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                           ),
                           if (sharedPaymentProof != null) ...[
                             const SizedBox(height: 8),
-                            _buildProofChip('PAYMENT PROOF', sharedPaymentProof),
-                          ] else if (!isGroup && (first.billProof != null || first.paymentProof != null)) ...[
+                            _buildProofChip('PAYMENT PROOF', [sharedPaymentProof!]),
+                          ] else if (!isGroup && (first.billProofsList.isNotEmpty || (first.paymentProof != null && first.paymentProof!.isNotEmpty))) ...[
                             const SizedBox(height: 8),
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
                               children: [
-                                if (first.billProof != null) _buildProofChip('BILL', first.billProof!),
-                                if (first.paymentProof != null) ...[
-                                  if (first.billProof != null) const SizedBox(width: 8),
-                                  _buildProofChip('PAY', first.paymentProof!),
-                                ],
+                                if (first.billProofsList.isNotEmpty) _buildProofChip('BILL', first.billProofsList),
+                                if (first.paymentProof != null && first.paymentProof!.isNotEmpty) _buildProofChip('PAY', [first.paymentProof!]),
                               ],
                             ),
                           ],
@@ -645,7 +643,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                       const Icon(Icons.qr_code_scanner_rounded, color: Colors.cyanAccent, size: 20),
                       const SizedBox(width: 12),
                       const Expanded(child: Text('Unified Payment Proof', style: TextStyle(color: Colors.white70, fontSize: 12))),
-                      _buildProofChip('VIEW', sharedPaymentProof),
+                      _buildProofChip('VIEW', [sharedPaymentProof!]),
                     ],
                   ),
                 ),
@@ -703,11 +701,17 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              if (coll.billProof != null) _buildProofChip('BILL', coll.billProof!),
-              if (coll.paymentProof != null && coll.paymentProof != sharedPaymentProof) ...[ 
-                const SizedBox(width: 8),
-                _buildProofChip('PAY', coll.paymentProof!),
-              ],
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (coll.billProofsList.isNotEmpty) _buildProofChip('BILL', coll.billProofsList),
+                    if (coll.paymentProof != null && coll.paymentProof!.isNotEmpty && coll.paymentProof != sharedPaymentProof) 
+                      _buildProofChip('PAY', [coll.paymentProof!]),
+                  ],
+                ),
+              ),
               const Spacer(),
               IconButton(
                 padding: EdgeInsets.zero,
@@ -737,9 +741,6 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     );
   }
 
-  Widget _buildHistoryItem(Collection coll) {
-    return _buildGroupedItem(coll.id, [coll], {});
-  }
 
   Widget _buildStatusIcon(bool isLarge) {
     return Container(
@@ -757,9 +758,9 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     );
   }
 
-  Widget _buildProofChip(String label, String path) {
+  Widget _buildProofChip(String label, List<String> paths) {
     return GestureDetector(
-      onTap: () => _showImageViewer(path, label),
+      onTap: () => _showImageViewer(paths, label),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
@@ -779,11 +780,11 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     );
   }
 
-  void _showImageViewer(String path, String title) {
+  void _showImageViewer(List<String> paths, String title) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullScreenImageViewer(path: path, title: title),
+        builder: (context) => FullScreenImageViewer(paths: paths, title: title),
       ),
     );
   }
@@ -881,25 +882,36 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () async {
-              Navigator.pop(context);
-              final auth = Provider.of<AuthProvider>(context, listen: false);
-              final provider = Provider.of<CollectionProvider>(context, listen: false);
+              Navigator.pop(context); // Close the confirmation dialog
               
-              if (isGroup) {
-                bool allSuccess = true;
-                for (var item in items) {
-                  final success = await ApiService.deleteCollection(item.id, auth.user!.token!);
-                  if (!success) allSuccess = false;
+              // Show loading dialog
+              showDialog(
+                context: this.context,
+                barrierDismissible: false,
+                builder: (loadingContext) => const Center(child: CircularProgressIndicator(color: Colors.cyanAccent)),
+              );
+
+              final auth = Provider.of<AuthProvider>(this.context, listen: false);
+              final provider = Provider.of<CollectionProvider>(this.context, listen: false);
+              
+              try {
+                // Artificial delay for visual feedback
+                await Future.delayed(const Duration(seconds: 1));
+
+                if (isGroup) {
+                  for (var item in items) {
+                    provider.deleteCollection(item.id); // Fast local update
+                    ApiService.deleteCollection(item.id, auth.user!.token!); // Background cloud delete
+                  }
+                  if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Group deleted'), backgroundColor: Colors.green));
+                } else {
+                  provider.deleteCollection(coll!.id); // Fast local update
+                  ApiService.deleteCollection(coll.id, auth.user!.token!); // Background cloud delete
+                  if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Record deleted'), backgroundColor: Colors.green));
                 }
-                if (allSuccess) {
-                  await provider.pullFromServer(auth.user!.token!, auth.user!.id.toString());
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Group deleted'), backgroundColor: Colors.green));
-                }
-              } else {
-                final success = await ApiService.deleteCollection(coll!.id, auth.user!.token!);
-                if (success) {
-                  await provider.pullFromServer(auth.user!.token!, auth.user!.id.toString());
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Record deleted'), backgroundColor: Colors.green));
+              } finally {
+                if (mounted) {
+                  Navigator.pop(this.context); // Close the loading dialog
                 }
               }
             },

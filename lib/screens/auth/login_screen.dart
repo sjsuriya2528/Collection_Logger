@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
 import '../../providers/auth_provider.dart';
@@ -82,22 +83,25 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(color: Colors.white.withOpacity(0.1)),
                       ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          children: [
-                            _buildTextField(
-                              controller: _emailController,
-                              label: 'Email Address',
-                              icon: Icons.email_outlined,
-                            ),
-                            const SizedBox(height: 20),
-                            _buildTextField(
-                              controller: _passwordController,
-                              label: 'Password',
-                              icon: Icons.lock_outline,
-                              isPassword: true,
-                              obscureText: _obscurePassword,
+                      child: AutofillGroup(
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            children: [
+                              _buildTextField(
+                                controller: _emailController,
+                                label: 'Email Address',
+                                icon: Icons.email_outlined,
+                                autofillHints: [AutofillHints.email],
+                              ),
+                              const SizedBox(height: 20),
+                              _buildTextField(
+                                controller: _passwordController,
+                                label: 'Password',
+                                icon: Icons.lock_outline,
+                                isPassword: true,
+                                autofillHints: [AutofillHints.password],
+                                obscureText: _obscurePassword,
                               onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                             ),
                             Align(
@@ -120,7 +124,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                             _emailController.text,
                                             _passwordController.text,
                                           );
-                                          if (!success && mounted) {
+                                          if (success && mounted) {
+                                            TextInput.finishAutofillContext();
+                                          } else if (!success && mounted) {
                                             _showError(context, 'Invalid credentials');
                                           }
                                         }
@@ -138,6 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
+                      ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -181,9 +188,11 @@ class _LoginScreenState extends State<LoginScreen> {
     bool isPassword = false,
     bool obscureText = false,
     VoidCallback? onToggleVisibility,
+    Iterable<String>? autofillHints,
   }) {
     return TextFormField(
       controller: controller,
+      autofillHints: autofillHints,
       obscureText: isPassword ? obscureText : false,
       style: const TextStyle(color: Colors.white),
       textInputAction: isPassword ? TextInputAction.done : TextInputAction.next,
@@ -200,15 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               onPressed: onToggleVisibility,
             )
-          : controller.text.isNotEmpty 
-              ? IconButton(
-                  icon: const Icon(Icons.clear_rounded, color: Colors.white38, size: 20),
-                  onPressed: () {
-                    controller.clear();
-                    setState(() {});
-                  },
-                )
-              : null,
+          : null,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
@@ -219,8 +220,8 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         filled: true,
         fillColor: Colors.white.withOpacity(0.05),
+        contentPadding: const EdgeInsets.all(20),
       ),
-      onChanged: (v) => setState(() {}),
       validator: (value) => value!.isEmpty ? 'Field required' : null,
     );
   }

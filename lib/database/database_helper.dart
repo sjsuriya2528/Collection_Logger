@@ -1,5 +1,6 @@
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
 import '../models/collection.dart';
 
 class DatabaseHelper {
@@ -62,6 +63,11 @@ class DatabaseHelper {
     }
   }
 
+  // Optimized background parsing
+  static List<Collection> _parseCollections(List<Map<String, dynamic>> rows) {
+    return rows.map((json) => Collection.fromMap(json)).toList();
+  }
+
   // Collection CRUD
   Future<int> insertCollection(Collection collection) async {
     final db = await instance.database;
@@ -75,7 +81,7 @@ class DatabaseHelper {
   Future<List<Collection>> getAllCollections() async {
     final db = await instance.database;
     final result = await db.query('collections', orderBy: 'date DESC');
-    return result.map((json) => Collection.fromMap(json)).toList();
+    return compute(_parseCollections, result);
   }
 
   Future<List<Collection>> getEmployeeCollections(String employeeId) async {
@@ -86,7 +92,7 @@ class DatabaseHelper {
       whereArgs: [employeeId],
       orderBy: 'date DESC',
     );
-    return result.map((json) => Collection.fromMap(json)).toList();
+    return compute(_parseCollections, result);
   }
 
   Future<List<Collection>> getUnsyncedCollections() async {
@@ -96,7 +102,7 @@ class DatabaseHelper {
       where: 'is_synced = ?',
       whereArgs: [0],
     );
-    return result.map((json) => Collection.fromMap(json)).toList();
+    return compute(_parseCollections, result);
   }
 
   Future<int> markAsSynced(String id, {String? billProof, String? paymentProof}) async {
@@ -128,3 +134,4 @@ class DatabaseHelper {
     db.close();
   }
 }
+

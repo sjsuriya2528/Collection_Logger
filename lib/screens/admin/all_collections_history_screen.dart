@@ -53,6 +53,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
         _endDate = today;
       }
     });
+    _updateFilteredData();
     Navigator.pop(context);
   }
 
@@ -61,10 +62,9 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
       final data = await ApiService.getAllCollections(auth.user!.token!);
-      setState(() {
-        _allCollections = data;
-        _isLoading = false;
-      });
+      _allCollections = data;
+      _isLoading = false;
+      _updateFilteredData();
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
@@ -81,8 +81,14 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     return DateTime.parse(dateStr).toLocal();
   }
 
-  List<dynamic> get _filteredCollections {
-    return _allCollections.where((c) {
+  List<dynamic> _cachedFilteredCollections = [];
+  double _totalAmount = 0;
+  double _cashAmount = 0;
+  double _upiAmount = 0;
+  double _chequeAmount = 0;
+
+  void _updateFilteredData() {
+    final filtered = _allCollections.where((c) {
       final date = _parseDate(c['date']);
       final d = DateTime(date.year, date.month, date.day);
 
@@ -111,29 +117,33 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
       
       return matchesDate && matchesSearch && matchesMode && matchesStatus;
     }).toList()..sort((a, b) => b['date'].compareTo(a['date']));
+
+    double total = 0;
+    double cash = 0;
+    double upi = 0;
+    double cheque = 0;
+
+    for (var item in filtered) {
+      final amt = double.tryParse(item['amount'].toString()) ?? 0;
+      final mode = item['payment_mode'].toString().toLowerCase();
+      total += amt;
+      if (mode == 'cash') cash += amt;
+      else if (mode == 'upi') upi += amt;
+      else if (mode == 'cheque') cheque += amt;
+      else if (mode == 'both') {
+        cash += double.tryParse(item['cash_amount'].toString()) ?? 0;
+        upi += double.tryParse(item['upi_amount'].toString()) ?? 0;
+      }
+    }
+
+    setState(() {
+      _cachedFilteredCollections = filtered;
+      _totalAmount = total;
+      _cashAmount = cash;
+      _upiAmount = upi;
+      _chequeAmount = cheque;
+    });
   }
-
-  double get _totalAmount => _filteredCollections.fold(0.0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
-  
-  double get _cashAmount => _filteredCollections.fold(0.0, (sum, item) {
-    final mode = item['payment_mode'].toString().toLowerCase();
-    if (mode == 'cash') return sum + (double.tryParse(item['amount'].toString()) ?? 0);
-    if (mode == 'both') return sum + (double.tryParse(item['cash_amount'].toString()) ?? 0);
-    return sum;
-  });
-
-  double get _upiAmount => _filteredCollections.fold(0.0, (sum, item) {
-    final mode = item['payment_mode'].toString().toLowerCase();
-    if (mode == 'upi') return sum + (double.tryParse(item['amount'].toString()) ?? 0);
-    if (mode == 'both') return sum + (double.tryParse(item['upi_amount'].toString()) ?? 0);
-    return sum;
-  });
-
-  double get _chequeAmount => _filteredCollections.where((e) => e['payment_mode'].toString().toLowerCase() == 'cheque').fold(0.0, (sum, item) => sum + (double.tryParse(item['amount'].toString()) ?? 0));
-
-
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -163,15 +173,18 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
           Expanded(
             child: _isLoading 
               ? const Center(child: CircularProgressIndicator(color: Colors.cyanAccent))
-              : _filteredCollections.isEmpty 
+              : _cachedFilteredCollections.isEmpty 
                 ? const Center(child: Text('No records found', style: TextStyle(color: Colors.white38)))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _filteredCollections.length,
-                    itemBuilder: (context, index) {
-                      final coll = _filteredCollections[index];
-                      return _buildCollectionCard(coll);
-                    },
+                : Scrollbar(
+                    thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _cachedFilteredCollections.length,
+                      itemBuilder: (context, index) {
+                        final coll = _cachedFilteredCollections[index];
+                        return _buildCollectionCard(coll);
+                      },
+                    ),
                   ),
           ),
         ],
@@ -244,8 +257,8 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Generating PDF Report...')));
     try {
       final pdf = type == 'employee' 
-        ? await PdfService.generateEmployeeWiseReport(collections: _filteredCollections, startDate: _startDate, endDate: _endDate)
-        : await PdfService.generateCollectionWiseReport(collections: _filteredCollections, startDate: _startDate, endDate: _endDate);
+        ? await PdfService.generateEmployeeWiseReport(collections: _cachedFilteredCollections, startDate: _startDate, endDate: _endDate)
+        : await PdfService.generateCollectionWiseReport(collections: _cachedFilteredCollections, startDate: _startDate, endDate: _endDate);
       
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(builder: (context) => PdfPreviewScreen(pdf: pdf, fileName: 'Collection_Report_$type.pdf')));
@@ -262,7 +275,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
         children: [
           TextField(
             controller: _searchController,
-            onChanged: (v) => setState(() {}),
+            onChanged: (v) => _updateFilteredData(),
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Search shop, bill or employee...',
@@ -291,15 +304,16 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => setState(() { 
-                    _startDate = null; 
-                    _endDate = null; 
-                    _selectedMode = 'all'; 
-                    _selectedStatusFilter = 'all';
-                  }),
-                  child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                ),
+                    GestureDetector(
+                      onTap: () {
+                        _startDate = null; 
+                        _endDate = null; 
+                        _selectedMode = 'all'; 
+                        _selectedStatusFilter = 'all';
+                        _updateFilteredData();
+                      },
+                      child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
               ],
             ),
           ],
@@ -409,7 +423,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
-                          setState(() {});
+                          _updateFilteredData();
                           Navigator.pop(context);
                         },
                         style: ElevatedButton.styleFrom(
@@ -613,15 +627,16 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
               ),
             ],
           ),
-          if (coll['bill_proof'] != null || coll['payment_proof'] != null) ...[
+          if ((coll['bill_proof'] != null && coll['bill_proof'].toString().trim().isNotEmpty) || coll['payment_proof'] != null) ...[
             const SizedBox(height: 12),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                if (coll['bill_proof'] != null) _buildProofChip('BILL', coll['bill_proof']),
-                if (coll['payment_proof'] != null) ...[
-                  const SizedBox(width: 8),
-                  _buildProofChip('PAY', coll['payment_proof']),
-                ],
+                if (coll['bill_proof'] != null && coll['bill_proof'].toString().trim().isNotEmpty) 
+                  _buildProofChip('BILL', coll['bill_proof'].toString().split(',').where((e) => e.trim().isNotEmpty).toList()),
+                if (coll['payment_proof'] != null) 
+                  _buildProofChip('PAY', [coll['payment_proof'].toString()]),
               ],
             ),
           ],
@@ -662,9 +677,9 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     );
   }
 
-  Widget _buildProofChip(String label, String path) {
+  Widget _buildProofChip(String label, List<String> paths) {
     return GestureDetector(
-      onTap: () => _showImageViewer(path, label),
+      onTap: () => _showImageViewer(paths, label),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(color: Colors.cyanAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.cyanAccent.withOpacity(0.2))),
@@ -680,11 +695,11 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     );
   }
 
-  void _showImageViewer(String path, String title) {
+  void _showImageViewer(List<String> paths, String title) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullScreenImageViewer(path: path, title: title),
+        builder: (context) => FullScreenImageViewer(paths: paths, title: title),
       ),
     );
   }

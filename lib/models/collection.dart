@@ -18,6 +18,8 @@ class Collection {
   final double upiAmount;
   final String? groupId;
 
+  List<String> get billProofsList => billProof?.split(',').where((e) => e.trim().isNotEmpty).toList() ?? [];
+
   Collection({
     String? id,
     required this.employeeId,

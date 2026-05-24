@@ -6,15 +6,17 @@ import 'package:uuid/uuid.dart';
 import '../../models/collection.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/collection_provider.dart';
+import '../../services/api_service.dart';
 
 class BillEntry {
+  String? id;
   final TextEditingController billNoController = TextEditingController();
   final TextEditingController amountController = TextEditingController();
   final TextEditingController cashController = TextEditingController();
   final TextEditingController upiController = TextEditingController();
   PaymentMode mode = PaymentMode.cash;
   String status = 'Partial';
-  String? billProof;
+  List<String> billProofs = [];
   String? paymentProof;
 
   void dispose() {
@@ -51,14 +53,15 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
       _bills = widget.initialItems!.map((item) {
         _billKeys.add(GlobalKey()); // Key for each card
         final entry = BillEntry();
+        entry.id = item.id;
         entry.billNoController.text = item.billNo;
-        entry.amountController.text = item.amount.toInt().toString();
+        entry.amountController.text = item.amount > 0 ? item.amount.toString().replaceAll(RegExp(r'\.0$'), '') : '';
         entry.mode = item.paymentMode;
         entry.status = item.status;
-        entry.billProof = item.billProof;
+        entry.billProofs = item.billProofsList;
         entry.paymentProof = item.paymentProof;
-        entry.cashController.text = item.cashAmount.toInt().toString();
-        entry.upiController.text = item.upiAmount.toInt().toString();
+        entry.cashController.text = item.cashAmount > 0 ? item.cashAmount.toString().replaceAll(RegExp(r'\.0$'), '') : '';
+        entry.upiController.text = item.upiAmount > 0 ? item.upiAmount.toString().replaceAll(RegExp(r'\.0$'), '') : '';
         return entry;
       }).toList();
 
@@ -169,6 +172,12 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
 
     setState(() => _isSubmitting = true);
 
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (loadingContext) => const Center(child: CircularProgressIndicator(color: Colors.cyanAccent)),
+    );
+
     try {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       final collProvider = Provider.of<CollectionProvider>(context, listen: false);
@@ -179,35 +188,32 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
       
       // If editing, we might need to handle records that were removed from the list
       if (isEdit) {
-        // Logic to handle removed records could go here (e.g. delete from DB)
-        // For simplicity, we'll replace the existing ones by ID where possible, 
-        // but if the user removed a bill card, we should delete that record.
-        final currentIds = _bills.asMap().entries.map((e) {
-          if (e.key < widget.initialItems!.length) return widget.initialItems![e.key].id;
-          return const Uuid().v4();
-        }).toList();
+        final currentIds = _bills.map((b) => b.id).whereType<String>().toList();
 
         for (var oldItem in widget.initialItems!) {
           if (!currentIds.contains(oldItem.id)) {
+            if (auth.user!.token != null) {
+              await ApiService.deleteCollection(oldItem.id, auth.user!.token!);
+            }
             await collProvider.deleteCollection(oldItem.id); 
-            // Note: need to add deleteCollection to Provider if not there, 
-            // or just use DatabaseHelper directly
           }
         }
       }
 
       for (int i = 0; i < _bills.length; i++) {
         final bill = _bills[i];
-        String? billProof = bill.billProof;
+        String? billProof = bill.billProofs.join(',');
         String? paymentProof = bill.paymentProof;
         
-        final id = (isEdit && i < widget.initialItems!.length) 
-            ? widget.initialItems![i].id 
-            : const Uuid().v4();
+        final id = bill.id ?? const Uuid().v4();
+        
+        final employeeId = isEdit 
+            ? widget.initialItems!.firstWhere((item) => item.id == bill.id, orElse: () => widget.initialItems!.first).employeeId
+            : auth.user!.id;
 
         final collection = Collection(
           id: id,
-          employeeId: auth.user!.id,
+          employeeId: employeeId,
           billNo: bill.billNoController.text,
           shopName: shopName,
           amount: double.parse(bill.amountController.text),
@@ -222,26 +228,31 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
           isSynced: false, // Mark as unsynced for re-upload
         );
 
-        if (isEdit && i < widget.initialItems!.length) {
+        if (isEdit && bill.id != null) {
           await collProvider.updateCollection(collection);
         } else {
           await collProvider.addCollection(collection, auth.user!.token, syncImmediately: false);
         }
       }
 
-      // Trigger a single batch sync for all added bills
+      // Trigger a batch sync in the background (do NOT await it so the UI doesn't hang)
       if (auth.user!.token != null) {
         collProvider.syncAllPending(auth.user!.token!);
       }
 
+      // Artificial 1 second delay for visual confirmation
+      await Future.delayed(const Duration(seconds: 1));
+
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // Close loading dialog
+        Navigator.pop(context); // Go back to history
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(isEdit ? 'Collection updated!' : 'Successfully added collections!'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
       if (mounted) {
+        Navigator.pop(context); // Close loading dialog
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent));
       }
     } finally {
@@ -324,9 +335,9 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
+        color: const Color(0xFF22223B),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: Colors.white10),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -378,7 +389,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     );
   }
 
-  void _showLinkDialog(int sourceIndex, String path, bool isPaymentProof) {
+  void _showLinkDialog(int sourceIndex, dynamic pathData, bool isPaymentProof) {
     showDialog(
       context: context,
       builder: (context) {
@@ -421,8 +432,8 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                   onPressed: () {
                     setState(() {
                       for (var i in selectedIndices) {
-                        if (isPaymentProof) _bills[i].paymentProof = path;
-                        else _bills[i].billProof = path;
+                        if (isPaymentProof) _bills[i].paymentProof = pathData as String;
+                        else _bills[i].billProofs = List.from(pathData as List<String>);
                       }
                     });
                     Navigator.pop(context);
@@ -440,7 +451,7 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
 
 
   Widget _buildIndividualBillProofs(int index, BillEntry bill) {
-    bool showBillProof = bill.status == 'Completed';
+    bool showBillProof = bill.status.toLowerCase() == 'completed';
     bool showPaymentProof = bill.mode != PaymentMode.cash;
     if (!showBillProof && !showPaymentProof) return const SizedBox.shrink();
     return Column(
@@ -448,19 +459,83 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
         const SizedBox(height: 24),
         _buildSectionTitle('PROOFS', Icons.camera_alt_rounded),
         const SizedBox(height: 12),
-        Row(children: [
-          if (showBillProof) Expanded(child: _buildProofButton(
-            label: 'Bill Photo', 
-            file: bill.billProof != null ? File(bill.billProof!) : null, 
-            onTap: () => _pickImage((path) => setState(() => bill.billProof = path)),
-            onLink: bill.billProof == null ? null : () => _showLinkDialog(index, bill.billProof!, false),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          if (showBillProof) Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildProofButton(
+                label: 'Bill Photo (${bill.billProofs.length})', 
+                file: bill.billProofs.isNotEmpty ? File(bill.billProofs.last) : null, 
+                onTap: () => _pickImage((path) => setState(() => bill.billProofs.add(path))),
+                onLink: bill.billProofs.isEmpty ? null : () => _showLinkDialog(index, bill.billProofs, false),
+              ),
+              if (bill.billProofs.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 60,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: bill.billProofs.length + 1,
+                    itemBuilder: (context, idx) {
+                      if (idx == bill.billProofs.length) {
+                        return GestureDetector(
+                          onTap: () => _pickImage((path) => setState(() => bill.billProofs.add(path))),
+                          child: Container(
+                            width: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white24, style: BorderStyle.solid),
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.add, color: Colors.cyanAccent, size: 24),
+                            ),
+                          ),
+                        );
+                      }
+                      final proof = bill.billProofs[idx];
+                      final isLocal = !proof.startsWith('http') && !proof.startsWith('/uploads');
+                      return Stack(
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            width: 60,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white24),
+                              image: DecorationImage(
+                                image: isLocal ? FileImage(File(proof)) as ImageProvider : NetworkImage(ApiService.getImageUrl(proof)),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 2, right: 10,
+                            child: GestureDetector(
+                              onTap: () => setState(() => bill.billProofs.removeAt(idx)),
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                child: const Icon(Icons.close, size: 12, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
           )),
           if (showBillProof && showPaymentProof) const SizedBox(width: 12),
           if (showPaymentProof) Expanded(child: _buildProofButton(
             label: 'Payment Proof', 
-            file: bill.paymentProof != null ? File(bill.paymentProof!) : null, 
+            file: (bill.paymentProof != null && bill.paymentProof!.isNotEmpty) ? File(bill.paymentProof!) : null, 
             onTap: () => _pickImage((path) => setState(() => bill.paymentProof = path)),
-            onLink: bill.paymentProof == null ? null : () => _showLinkDialog(index, bill.paymentProof!, true),
+            onLink: (bill.paymentProof == null || bill.paymentProof!.isEmpty) ? null : () => _showLinkDialog(index, bill.paymentProof!, true),
           )),
         ]),
       ],
@@ -473,7 +548,12 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     child: Row(children: PaymentMode.values.map((mode) {
       bool isSelected = bill.mode == mode;
       return Expanded(child: GestureDetector(
-        onTap: () => setState(() => bill.mode = mode),
+        onTap: () => setState(() {
+          bill.mode = mode;
+          if (mode == PaymentMode.cash) {
+            bill.paymentProof = null;
+          }
+        }),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(color: isSelected ? Colors.cyanAccent : Colors.transparent, borderRadius: BorderRadius.circular(16)),
@@ -489,10 +569,15 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
   Widget _buildStatusSelector(BillEntry bill) {
     return Row(
       children: ['Partial', 'Completed'].map((s) {
-        bool isSelected = bill.status == s;
+        bool isSelected = bill.status.toLowerCase() == s.toLowerCase();
         return Expanded(
           child: GestureDetector(
-            onTap: () => setState(() => bill.status = s),
+            onTap: () => setState(() {
+              bill.status = s;
+              if (s == 'Partial') {
+                bill.billProofs.clear();
+              }
+            }),
             child: Container(
               margin: EdgeInsets.only(
                 right: s == 'Partial' ? 8 : 0,

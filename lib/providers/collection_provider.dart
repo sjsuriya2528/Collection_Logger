@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../models/collection.dart';
 import '../database/database_helper.dart';
 import '../services/api_service.dart';
@@ -11,28 +12,73 @@ class CollectionProvider with ChangeNotifier {
   List<Collection> get collections => _collections;
   bool get isLoading => _isLoading;
 
-  double get todayTotal {
-    final today = DateTime.now();
-    return _collections
-        .where((c) => 
-            c.date.year == today.year && 
-            c.date.month == today.month && 
-            c.date.day == today.day)
-        .fold(0.0, (sum, item) => sum + item.amount);
+  double _todayTotal = 0;
+  Map<String, double> _modeBreakdown = {
+    'Cash': 0,
+    'UPI': 0,
+    'Cheque': 0,
+  };
+  Map<String, int> _shopFinCounts = {};
+  Map<String, int> _collectionFinNumbers = {};
+
+  double get todayTotal => _todayTotal;
+  Map<String, double> get modeBreakdown => _modeBreakdown;
+  Map<String, int> get shopFinCounts => _shopFinCounts;
+  Map<String, int> get collectionFinNumbers => _collectionFinNumbers;
+
+  Future<void> _updateCalculations() async {
+    final result = await compute(_performCalculations, {
+      'collections': _collections,
+      'today': DateTime.now(),
+    });
+
+    _todayTotal = result.todayTotal;
+    _modeBreakdown = result.modeBreakdown;
+    _shopFinCounts = result.shopFinCounts;
+    _collectionFinNumbers = result.collectionFinNumbers;
   }
 
-  Map<String, double> get modeBreakdown {
-    final today = DateTime.now();
-    final todayColls = _collections.where((c) => 
-            c.date.year == today.year && 
-            c.date.month == today.month && 
-            c.date.day == today.day);
+  static CalculationResult _performCalculations(Map<String, dynamic> params) {
+    final List<Collection> colls = params['collections'];
+    final DateTime today = params['today'];
     
-    return {
-      'Cash': todayColls.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.cash ? c.amount : (c.paymentMode == PaymentMode.both ? c.cashAmount : 0))),
-      'UPI': todayColls.fold(0.0, (s, c) => s + (c.paymentMode == PaymentMode.upi ? c.amount : (c.paymentMode == PaymentMode.both ? c.upiAmount : 0))),
-      'Cheque': todayColls.where((c) => c.paymentMode == PaymentMode.cheque).fold(0.0, (s, i) => s + i.amount),
-    };
+    double total = 0;
+    double cash = 0;
+    double upi = 0;
+    double cheque = 0;
+    final Map<String, int> finCounts = {};
+    final Map<String, int> finNumbers = {};
+
+    // Sort ascending by date to assign sequential FINs
+    final sortedColls = List<Collection>.from(colls)..sort((a, b) => a.date.compareTo(b.date));
+
+    for (var c in sortedColls) {
+      if (c.date.year == today.year && 
+          c.date.month == today.month && 
+          c.date.day == today.day) {
+        total += c.amount;
+        if (c.paymentMode == PaymentMode.cash) cash += c.amount;
+        else if (c.paymentMode == PaymentMode.upi) upi += c.amount;
+        else if (c.paymentMode == PaymentMode.cheque) cheque += c.amount;
+        else if (c.paymentMode == PaymentMode.both) {
+          cash += c.cashAmount;
+          upi += c.upiAmount;
+        }
+      }
+
+      if (c.status.toLowerCase().trim() == 'completed') {
+        final key = c.shopName.trim().toLowerCase();
+        finCounts[key] = (finCounts[key] ?? 0) + 1;
+        finNumbers[c.id] = finCounts[key]!;
+      }
+    }
+
+    return CalculationResult(
+      todayTotal: total,
+      modeBreakdown: {'Cash': cash, 'UPI': upi, 'Cheque': cheque},
+      shopFinCounts: finCounts,
+      collectionFinNumbers: finNumbers,
+    );
   }
 
   Future<void> fetchCollections(String employeeId, {String? token}) async {
@@ -41,6 +87,7 @@ class CollectionProvider with ChangeNotifier {
     
     // 1. Load from local DB first for speed
     _collections = await DatabaseHelper.instance.getEmployeeCollections(employeeId);
+    await _updateCalculations();
     _isLoading = false;
     notifyListeners();
 
@@ -53,7 +100,6 @@ class CollectionProvider with ChangeNotifier {
   }
 
   Future<void> syncPendingCollections(String token) async {
-    // Consolidation: Use the new robust parallel sync method
     await syncAllPending(token);
   }
 
@@ -62,18 +108,14 @@ class CollectionProvider with ChangeNotifier {
       final serverData = await ApiService.getMyCollections(token);
       final List<String> serverIds = serverData.map((d) => d['id'].toString()).toList();
       
-      // 1. Get all local synced records
       final localCollections = await DatabaseHelper.instance.getEmployeeCollections(employeeId);
       
-      // 2. Identify records that are local but NOT on server (and were already synced)
       for (var local in localCollections) {
         if (local.isSynced && !serverIds.contains(local.id)) {
-          print('Cleanup: Record ${local.id} not found on server. Deleting locally...');
           await DatabaseHelper.instance.deleteCollection(local.id);
         }
       }
 
-      // 3. Upsert server records into local DB
       for (var data in serverData) {
         final coll = Collection.fromMap({
           ...data,
@@ -82,8 +124,8 @@ class CollectionProvider with ChangeNotifier {
         await DatabaseHelper.instance.insertCollection(coll);
       }
       
-      // 4. Final UI update
       _collections = await DatabaseHelper.instance.getEmployeeCollections(employeeId);
+      await _updateCalculations();
       notifyListeners();
     } catch (e) {
       print('Pull Sync Error: $e');
@@ -93,6 +135,7 @@ class CollectionProvider with ChangeNotifier {
   Future<void> addCollection(Collection collection, String? token, {bool syncImmediately = true}) async {
     await DatabaseHelper.instance.insertCollection(collection);
     _collections.insert(0, collection);
+    await _updateCalculations();
     notifyListeners();
  
     if (token != null && syncImmediately) {
@@ -105,6 +148,7 @@ class CollectionProvider with ChangeNotifier {
     final index = _collections.indexWhere((c) => c.id == updated.id);
     if (index != -1) {
       _collections[index] = updated;
+      await _updateCalculations();
       notifyListeners();
     }
   }
@@ -112,6 +156,7 @@ class CollectionProvider with ChangeNotifier {
   Future<void> deleteCollection(String id) async {
     await DatabaseHelper.instance.deleteCollection(id);
     _collections.removeWhere((c) => c.id == id);
+    await _updateCalculations();
     notifyListeners();
   }
 
@@ -120,32 +165,32 @@ class CollectionProvider with ChangeNotifier {
     String token, 
     Map<String, Future<String?>> uploadRegistry
   ) async {
-    print('Sync: Processing collection ${collection.id} (Bill: ${collection.billNo})...');
-    
-    // Helper to upload files only once if shared across multiple records in this batch
-    Future<String?> upload(String? path, String type) async {
-      if (path == null || path.startsWith('http') || path.startsWith('/uploads')) return path;
+    Future<String?> uploadMultiple(String? pathsStr, String type) async {
+      if (pathsStr == null || pathsStr.isEmpty) return pathsStr;
+      final paths = pathsStr.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      final uploadedUrls = <String>[];
       
-      // If this file path is already being uploaded, wait for THAT future.
-      if (!uploadRegistry.containsKey(path)) {
-        uploadRegistry[path] = ApiService.uploadFile(path, token, type);
+      for (var path in paths) {
+        if (path.startsWith('http') || path.startsWith('/uploads')) {
+          uploadedUrls.add(path);
+        } else {
+          if (!uploadRegistry.containsKey(path)) {
+            uploadRegistry[path] = ApiService.uploadFile(path, token, type);
+          }
+          final url = await uploadRegistry[path];
+          if (url != null) uploadedUrls.add(url);
+        }
       }
-      return uploadRegistry[path];
+      return uploadedUrls.isEmpty ? null : uploadedUrls.join(',');
     }
 
-    // Wait for proof uploads to complete (reusing futures if paths are identical)
-    String? bp = await upload(collection.billProof, 'bill');
-    String? pp = await upload(collection.paymentProof, 'payment');
+    String? bp = await uploadMultiple(collection.billProof, 'bill');
+    String? pp = await uploadMultiple(collection.paymentProof, 'payment');
 
-
-    // Create a version with server URLs
     Collection toSync = collection.copyWith(billProof: bp, paymentProof: pp);
 
     final response = await ApiService.syncCollection(toSync, token);
     if (response != null) {
-      print('Sync: Successfully synced record ${collection.id}');
-      
-      // Persist the server URLs to the local database as well
       await DatabaseHelper.instance.markAsSynced(
         collection.id, 
         billProof: bp, 
@@ -154,16 +199,14 @@ class CollectionProvider with ChangeNotifier {
 
       final index = _collections.indexWhere((c) => c.id == collection.id);
       if (index != -1) {
-        // Update the in-memory state with server URLs so "VIEW" buttons appear/work
         _collections[index] = _collections[index].copyWith(
           isSynced: true,
           billProof: bp,
           paymentProof: pp,
         );
+        await _updateCalculations();
         notifyListeners();
       }
-    } else {
-      print('Sync: Failed to upload ${collection.id}. Will retry later.');
     }
   }
 
@@ -173,15 +216,21 @@ class CollectionProvider with ChangeNotifier {
 
     final unsynced = await DatabaseHelper.instance.getUnsyncedCollections();
     if (unsynced.isEmpty) return;
-
-    print('Sync: Starting parallel batch sync for ${unsynced.length} records...');
     
-    // The uploadRegistry stores the FUTURE of each unique file path's upload.
-    // Multiple records sharing the same path will wait for the same Future.
     final Map<String, Future<String?>> uploadRegistry = {};
-    
     await Future.wait(unsynced.map((coll) => _syncOne(coll, token, uploadRegistry)));
-    print('Sync: Batch sync completed.');
   }
+}
 
+class CalculationResult {
+  final double todayTotal;
+  final Map<String, double> modeBreakdown;
+  final Map<String, int> shopFinCounts;
+  final Map<String, int> collectionFinNumbers;
+  CalculationResult({
+    required this.todayTotal, 
+    required this.modeBreakdown, 
+    required this.shopFinCounts,
+    required this.collectionFinNumbers,
+  });
 }

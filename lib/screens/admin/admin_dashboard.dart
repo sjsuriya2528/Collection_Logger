@@ -168,7 +168,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.white),
-            onPressed: () => auth.logout(),
+            onPressed: () => _showLogoutConfirmation(context, auth),
           ),
         ],
       ),
@@ -178,38 +178,43 @@ class _AdminDashboardState extends State<AdminDashboard> {
             onRefresh: _refreshAll,
             color: Colors.cyanAccent,
             backgroundColor: const Color(0xFF16213E),
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(auth.user?.name ?? 'Admin'),
-                  const SizedBox(height: 24),
-                  _buildAdminSummary(),
-                  const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: RepaintBoundary(
+              child: Scrollbar(
+                thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Employees',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                      _buildHeader(auth.user?.name ?? 'Admin'),
+                      const SizedBox(height: 24),
+                      _buildAdminSummary(),
+                      const SizedBox(height: 32),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Employees',
+                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          const Icon(Icons.leaderboard_rounded, color: Colors.cyanAccent, size: 20),
+                        ],
                       ),
-                      const Icon(Icons.leaderboard_rounded, color: Colors.cyanAccent, size: 20),
+                      const SizedBox(height: 16),
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _employees.length,
+                        itemBuilder: (context, index) {
+                          final emp = _employees[index];
+                          return _buildEmployeeCard(emp, index);
+                        },
+                      ),
+                      const SizedBox(height: 32),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _employees.length,
-                    itemBuilder: (context, index) {
-                      final emp = _employees[index];
-                      return _buildEmployeeCard(emp, index);
-                    },
-                  ),
-                  const SizedBox(height: 32),
-                ],
+                ),
               ),
             ),
           ),
@@ -546,6 +551,35 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showLogoutConfirmation(BuildContext context, AuthProvider auth) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Confirm Logout', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to log out?', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              auth.logout();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Logout', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
