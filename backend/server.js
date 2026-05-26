@@ -296,8 +296,17 @@ const ensureColumns = async () => {
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS cash_amount DECIMAL DEFAULT 0');
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS upi_amount DECIMAL DEFAULT 0');
     await db.query('ALTER TABLE collections ADD COLUMN IF NOT EXISTS group_id TEXT');
+
+    // Add performance indexes — critical for fast queries as data grows
+    // Without these, every query does a full table scan (very slow!)
+    await db.query('CREATE INDEX IF NOT EXISTS idx_collections_date ON collections(date DESC)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_collections_employee_id ON collections(employee_id)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_collections_group_id ON collections(group_id)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_collections_employee_date ON collections(employee_id, date DESC)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_collections_status ON collections(status)');
     
     console.log('Database schema verified and tables created');
+
   } catch (err) {
     console.error('Migration Error:', err);
   }
@@ -939,6 +948,13 @@ app.post('/api/shop-balances/bulk', authenticateToken, async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// --- HEALTH CHECK ---
+
+// Simple health check endpoint
+app.get('/api/ping', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
