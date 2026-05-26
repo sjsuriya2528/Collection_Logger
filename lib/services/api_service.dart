@@ -304,15 +304,48 @@ class ApiService {
     }
   }
 
-  static Future<List<dynamic>> getAllCollections(String token) async {
+  static Future<List<dynamic>> getAllCollections(String token, {DateTime? startDate, DateTime? endDate}) async {
+    String url = '$baseUrl/api/admin/collections';
+    // Send date range to server so it only returns relevant records
+    if (startDate != null && endDate != null) {
+      final start = startDate.toUtc().toIso8601String().split('T').first;
+      final end = endDate.toUtc().toIso8601String().split('T').first;
+      url += '?startDate=$start&endDate=$end';
+    }
     final response = await http.get(
-      Uri.parse('$baseUrl/api/admin/collections'),
+      Uri.parse(url),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode == 200) {
       return await _parseJson(response.body);
     } else {
       throw Exception('Failed to load all collections');
+    }
+  }
+
+  static Future<List<dynamic>> getShopBalances(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/shop-balances'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      return await _parseJson(response.body);
+    } else {
+      throw Exception('Failed to load shop balances');
+    }
+  }
+
+  static Future<void> bulkUpdateShopBalances(String token, List<Map<String, dynamic>> balances) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/shop-balances/bulk'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'balances': balances}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to update shop balances');
     }
   }
 }

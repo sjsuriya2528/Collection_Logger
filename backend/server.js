@@ -279,6 +279,16 @@ const ensureColumns = async () => {
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Create Shop Balances table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS shop_balances (
+        id SERIAL PRIMARY KEY,
+        shop_name TEXT NOT NULL,
+        amount DECIMAL NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
     
     // Safe Migrations
     await db.query('ALTER TABLE collections ALTER COLUMN bill_no DROP NOT NULL');
@@ -708,12 +718,32 @@ app.get('/api/admin/dashboard', authenticateToken, async (req, res) => {
 app.get('/api/admin/collections', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
   try {
-    const result = await db.query(`
-      SELECT c.*, u.name as employee_name
-      FROM collections c
-      JOIN users u ON c.employee_id = u.id
-      ORDER BY c.date DESC
-    `);
+    const { startDate, endDate } = req.query;
+    let query;
+    let params = [];
+
+    if (startDate && endDate) {
+      // Filter by date range at DB level — much faster than fetching all and filtering in app
+      query = `
+        SELECT c.*, u.name as employee_name
+        FROM collections c
+        JOIN users u ON c.employee_id = u.id
+        WHERE c.date >= $1::date AND c.date < ($2::date + interval '1 day')
+        ORDER BY c.date DESC
+      `;
+      params = [startDate, endDate];
+    } else {
+      // No date range — return last 30 days by default to avoid massive payloads
+      query = `
+        SELECT c.*, u.name as employee_name
+        FROM collections c
+        JOIN users u ON c.employee_id = u.id
+        WHERE c.date >= NOW() - interval '30 days'
+        ORDER BY c.date DESC
+      `;
+    }
+
+    const result = await db.query(query, params);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -868,6 +898,46 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
     res.json({ message: 'Deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- SHOP BALANCES ENDPOINTS ---
+
+app.get('/api/shop-balances', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM shop_balances ORDER BY shop_name ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/shop-balances/bulk', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+  const { balances } = req.body;
+  if (!Array.isArray(balances)) return res.status(400).json({ message: 'Invalid format' });
+  
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('TRUNCATE TABLE shop_balances RESTART IDENTITY');
+    
+    for (const balance of balances) {
+      if (balance.shop_name && balance.amount !== undefined) {
+        await client.query(
+          'INSERT INTO shop_balances (shop_name, amount) VALUES ($1, $2)',
+          [balance.shop_name, parseFloat(balance.amount)]
+        );
+      }
+    }
+    
+    await client.query('COMMIT');
+    res.json({ message: 'Shop balances updated successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -8,6 +8,7 @@ import '../../providers/collection_provider.dart';
 import '../../models/collection.dart';
 import '../../services/api_service.dart';
 import '../../services/notification_service.dart';
+import '../common/collection_balance_screen.dart';
 import 'add_collection_screen.dart';
 import 'history_screen.dart';
 
@@ -104,6 +105,24 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   _buildTotalCard(collProvider.todayTotal),
                   const SizedBox(height: 16),
                   _buildModeCards(collProvider.modeBreakdown),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const CollectionBalanceScreen()),
+                      ),
+                      icon: const Icon(Icons.account_balance_wallet_rounded),
+                      label: const Text('SHOP BALANCES', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white.withOpacity(0.05),
+                        foregroundColor: Colors.cyanAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.cyanAccent.withOpacity(0.3))),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 32),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

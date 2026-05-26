@@ -11,6 +11,7 @@ import 'package:local_notifier/local_notifier.dart';
 import 'employee_history_screen.dart';
 import 'dart:io';
 import 'all_collections_history_screen.dart';
+import '../common/collection_balance_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -190,6 +191,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       _buildHeader(auth.user?.name ?? 'Admin'),
                       const SizedBox(height: 24),
                       _buildAdminSummary(),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const CollectionBalanceScreen()),
+                          ),
+                          icon: const Icon(Icons.account_balance_wallet_rounded),
+                          label: const Text('SHOP BALANCES', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white.withOpacity(0.05),
+                            foregroundColor: Colors.cyanAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.cyanAccent.withOpacity(0.3))),
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 32),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,

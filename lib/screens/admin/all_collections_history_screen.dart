@@ -53,15 +53,20 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
         _endDate = today;
       }
     });
-    _updateFilteredData();
     Navigator.pop(context);
+    _fetchData(); // Re-fetch from server with new date range
   }
 
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
-      final data = await ApiService.getAllCollections(auth.user!.token!);
+      // Pass date range so server only returns records for that period
+      final data = await ApiService.getAllCollections(
+        auth.user!.token!,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
       _allCollections = data;
       _isLoading = false;
       _updateFilteredData();
@@ -310,7 +315,8 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                         _endDate = null; 
                         _selectedMode = 'all'; 
                         _selectedStatusFilter = 'all';
-                        _updateFilteredData();
+                        Navigator.pop(context);
+                        _fetchData(); // Re-fetch everything from server
                       },
                       child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
@@ -423,8 +429,10 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
-                          _updateFilteredData();
+                          _updateFilteredData(); // Apply mode/status filters locally
                           Navigator.pop(context);
+                          // If date changed, re-fetch from server
+                          _fetchData();
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.cyanAccent,
@@ -627,7 +635,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
               ),
             ],
           ),
-          if ((coll['bill_proof'] != null && coll['bill_proof'].toString().trim().isNotEmpty) || coll['payment_proof'] != null) ...[
+          if ((coll['bill_proof'] != null && coll['bill_proof'].toString().trim().isNotEmpty) || (coll['payment_proof'] != null && coll['payment_proof'].toString().trim().isNotEmpty)) ...[
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -635,7 +643,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
               children: [
                 if (coll['bill_proof'] != null && coll['bill_proof'].toString().trim().isNotEmpty) 
                   _buildProofChip('BILL', coll['bill_proof'].toString().split(',').where((e) => e.trim().isNotEmpty).toList()),
-                if (coll['payment_proof'] != null) 
+                if (coll['payment_proof'] != null && coll['payment_proof'].toString().trim().isNotEmpty) 
                   _buildProofChip('PAY', [coll['payment_proof'].toString()]),
               ],
             ),

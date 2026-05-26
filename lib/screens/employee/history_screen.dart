@@ -432,6 +432,17 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     final bool isGroup = items.length > 1;
     final bool isExpanded = _expandedGroups.contains(groupId);
     final totalGroupAmount = items.fold(0.0, (sum, c) => sum + c.amount);
+    
+    // Extract unique FINs for the entire group
+    List<String> groupFins = [];
+    for (var c in items) {
+      final fin = collProvider.collectionFinNumbers[c.id];
+      if (fin != null && !groupFins.contains(fin.toString())) {
+        groupFins.add(fin.toString());
+      }
+    }
+    groupFins.sort();
+
     // For unified payments, check if all items share the same paymentProof
     String? sharedPaymentProof;
     if (isGroup) {
@@ -521,7 +532,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                               ),
-                              if (collProvider.collectionFinNumbers[first.id] != null) ...[
+                              if (groupFins.isNotEmpty) ...[
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -531,7 +542,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                                     border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
                                   ),
                                   child: Text(
-                                    '${collProvider.collectionFinNumbers[first.id]} FIN',
+                                    '${groupFins.join(', ')} FIN',
                                     style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
                                   ),
                                 ),

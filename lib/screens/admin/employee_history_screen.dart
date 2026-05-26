@@ -389,6 +389,16 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     final bool isExpanded = _expandedGroups.contains(groupId);
     final totalGroupAmount = items.fold(0.0, (sum, c) => sum + (double.tryParse(c['amount'].toString()) ?? 0));
     
+    // Extract unique FINs for the entire group
+    List<String> groupFins = [];
+    for (var c in items) {
+      final fin = _collectionFinNumbers[c['id'].toString()];
+      if (fin != null && !groupFins.contains(fin.toString())) {
+        groupFins.add(fin.toString());
+      }
+    }
+    groupFins.sort();
+    
     String? sharedPaymentProof;
     if (isGroup) {
       final proofItems = items.where((element) => element['payment_mode'].toString().toLowerCase() != 'cash').toList();
@@ -476,7 +486,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                               ),
-                              if (_collectionFinNumbers[first['id'].toString()] != null) ...[
+                              if (groupFins.isNotEmpty) ...[
                                     const SizedBox(width: 8),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -486,7 +496,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                                         border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
                                       ),
                                       child: Text(
-                                        '${_collectionFinNumbers[first['id'].toString()]} FIN',
+                                        '${groupFins.join(', ')} FIN',
                                         style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
                                       ),
                                     ),
