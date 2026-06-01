@@ -14,6 +14,8 @@ class CollectionBalanceScreen extends StatefulWidget {
 }
 
 class _CollectionBalanceScreenState extends State<CollectionBalanceScreen> {
+  final ScrollController _scrollController = ScrollController();
+  final ScrollController _areaScrollController = ScrollController();
   List<ShopBalance> _allBalances = [];
   List<ShopBalance> _filteredBalances = [];
   bool _isLoading = true;
@@ -44,6 +46,8 @@ class _CollectionBalanceScreenState extends State<CollectionBalanceScreen> {
     _searchController.dispose();
     _minAmountController.dispose();
     _maxAmountController.dispose();
+    _scrollController.dispose();
+    _areaScrollController.dispose();
     super.dispose();
   }
 
@@ -304,7 +308,9 @@ class _CollectionBalanceScreenState extends State<CollectionBalanceScreen> {
                         ),
                         child: Scrollbar(
                           thumbVisibility: true,
+                          controller: _areaScrollController,
                           child: ListView.builder(
+                            controller: _areaScrollController,
                             padding: EdgeInsets.zero,
                             itemCount: filteredAreas.length,
                             itemBuilder: (context, index) {
@@ -787,8 +793,10 @@ class _CollectionBalanceScreenState extends State<CollectionBalanceScreen> {
                     child: Text('No balances found matching your filters', style: TextStyle(color: Colors.white54, fontSize: 16)),
                   )
                 : Scrollbar(
+                    controller: _scrollController,
                     thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
                     child: ListView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       itemCount: _filteredBalances.length,
                       itemBuilder: (context, index) {

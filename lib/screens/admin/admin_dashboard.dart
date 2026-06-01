@@ -21,6 +21,7 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
+  final ScrollController _scrollController = ScrollController();
   List<dynamic> _employees = [];
   Map<String, dynamic> _summary = {'today_total': 0, 'breakdown': []};
   bool _isLoading = false;
@@ -45,6 +46,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -182,7 +184,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
             child: RepaintBoundary(
               child: Scrollbar(
                 thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+                controller: _scrollController,
                 child: SingleChildScrollView(
+                  controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(

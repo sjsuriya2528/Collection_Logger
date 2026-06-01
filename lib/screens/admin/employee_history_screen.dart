@@ -23,6 +23,7 @@ class EmployeeHistoryScreen extends StatefulWidget {
 }
 
 class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
+  final ScrollController _scrollController = ScrollController();
   List<dynamic> _collections = [];
   bool _isLoading = true;
   DateTime? _startDate;
@@ -50,6 +51,13 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     _fetchHistory();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _fetchHistory() async {
     setState(() => _isLoading = true);
     final auth = Provider.of<AuthProvider>(context, listen: false);
@@ -70,13 +78,32 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
 
       for (var c in sortedColls) {
         if ((c['status'] ?? 'partial').toString().toLowerCase().trim() == 'completed') {
-          final key = c['shop_name']?.toString().trim().toLowerCase() ?? "";
-          if (key.isNotEmpty) {
-            finCounts[key] = (finCounts[key] ?? 0) + 1;
-            finNumbers[c['id'].toString()] = finCounts[key]!;
-          }
+          final shopKey = c['shop_name']?.toString().trim().toLowerCase() ?? "";
+          if (shopKey.isEmpty) continue;
+
+          // Parse date
+          String dStr = c['date'].toString();
+          if (!dStr.contains('Z') && !dStr.contains('+')) dStr += 'Z';
+          final date = DateTime.tryParse(dStr)?.toLocal() ?? DateTime(0);
+          final dateDay = '${date.year}-${date.month}-${date.day}';
+
+          // A settlement = group_id if grouped, otherwise the specific calendar day
+          final gId = c['group_id']?.toString() ?? '';
+          final settlementKey = gId.isNotEmpty
+              ? '${shopKey}__group__$gId'
+              : '${shopKey}__date__$dateDay';
+
+          // Assign FIN per unique settlement, not per individual bill
+          finCounts.putIfAbsent(settlementKey, () {
+            final shopSettlementCount = finCounts.keys
+                .where((k) => k.startsWith('${shopKey}__'))
+                .length;
+            return shopSettlementCount + 1;
+          });
+          finNumbers[c['id'].toString()] = finCounts[settlementKey]!;
         }
       }
+
       _collectionFinNumbers = finNumbers;
       
       _updateFilteredData();
@@ -346,7 +373,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
 
                             return Scrollbar(
                               thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+                              controller: _scrollController,
                               child: ListView.builder(
+                                controller: _scrollController,
                                 padding: const EdgeInsets.symmetric(horizontal: 20),
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 itemCount: groupIds.length,
@@ -389,15 +418,10 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     final bool isExpanded = _expandedGroups.contains(groupId);
     final totalGroupAmount = items.fold(0.0, (sum, c) => sum + (double.tryParse(c['amount'].toString()) ?? 0));
     
-    // Extract unique FINs for the entire group
-    List<String> groupFins = [];
-    for (var c in items) {
-      final fin = _collectionFinNumbers[c['id'].toString()];
-      if (fin != null && !groupFins.contains(fin.toString())) {
-        groupFins.add(fin.toString());
-      }
-    }
-    groupFins.sort();
+    // FIN = number of completed bills within this card/group
+    final completedCount = items.where((c) =>
+      (c['status'] ?? 'partial').toString().toLowerCase().trim() == 'completed'
+    ).length;
     
     String? sharedPaymentProof;
     if (isGroup) {
@@ -486,7 +510,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                               ),
-                              if (groupFins.isNotEmpty) ...[
+                              if (completedCount > 0) ...[
                                     const SizedBox(width: 8),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -496,7 +520,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                                         border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
                                       ),
                                       child: Text(
-                                        '${groupFins.join(', ')} FIN',
+                                        '$completedCount FIN',
                                         style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
                                       ),
                                     ),

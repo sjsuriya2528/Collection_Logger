@@ -67,10 +67,24 @@ class CollectionProvider with ChangeNotifier {
       }
 
       if (c.status.toLowerCase().trim() == 'completed') {
-        final key = c.shopName.trim().toLowerCase();
-        finCounts[key] = (finCounts[key] ?? 0) + 1;
-        finNumbers[c.id] = finCounts[key]!;
+        final shopKey = c.shopName.trim().toLowerCase();
+        final dateDay = '${c.date.year}-${c.date.month}-${c.date.day}';
+        // A settlement = group_id if grouped, otherwise the specific calendar day
+        final settlementKey = (c.groupId != null && c.groupId!.isNotEmpty)
+            ? '${shopKey}__group__${c.groupId}'
+            : '${shopKey}__date__$dateDay';
+        // Track unique settlements per shop in insertion order
+        finCounts.putIfAbsent(settlementKey, () {
+          // Count how many unique settlements this shop already has
+          final shopSettlementCount = finCounts.keys
+              .where((k) => k.startsWith('${shopKey}__'))
+              .length;
+          return shopSettlementCount + 1;
+        });
+        // Assign this settlement's FIN number to this bill
+        finNumbers[c.id] = finCounts[settlementKey]!;
       }
+
     }
 
     return CalculationResult(

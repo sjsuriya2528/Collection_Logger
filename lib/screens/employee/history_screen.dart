@@ -23,6 +23,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   String _selectedMode = 'all';
   String _selectedStatusFilter = 'all';
   final _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   String _searchQuery = "";
   final Set<String> _expandedGroups = {};
 
@@ -32,6 +33,13 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, now.day);
     _endDate = DateTime(now.year, now.month, now.day);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _applyQuickFilter(String type) {
@@ -212,7 +220,9 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                   child: RepaintBoundary(
                     child: Scrollbar(
                       thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+                      controller: _scrollController,
                       child: ListView.builder(
+                        controller: _scrollController,
                         padding: const EdgeInsets.all(20),
                         physics: const AlwaysScrollableScrollPhysics(), // Ensures swipe works even if list is short
                         itemCount: groupIds.length,
@@ -433,15 +443,8 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     final bool isExpanded = _expandedGroups.contains(groupId);
     final totalGroupAmount = items.fold(0.0, (sum, c) => sum + c.amount);
     
-    // Extract unique FINs for the entire group
-    List<String> groupFins = [];
-    for (var c in items) {
-      final fin = collProvider.collectionFinNumbers[c.id];
-      if (fin != null && !groupFins.contains(fin.toString())) {
-        groupFins.add(fin.toString());
-      }
-    }
-    groupFins.sort();
+    // FIN = number of completed bills within this card/group
+    final completedCount = items.where((c) => c.status.toLowerCase().trim() == 'completed').length;
 
     // For unified payments, check if all items share the same paymentProof
     String? sharedPaymentProof;
@@ -532,7 +535,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                               ),
-                              if (groupFins.isNotEmpty) ...[
+                              if (completedCount > 0) ...[
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -542,7 +545,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                                     border: Border.all(color: Colors.greenAccent.withOpacity(0.3), width: 0.5),
                                   ),
                                   child: Text(
-                                    '${groupFins.join(', ')} FIN',
+                                    '$completedCount FIN',
                                     style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold),
                                   ),
                                 ),

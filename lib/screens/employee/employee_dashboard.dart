@@ -20,6 +20,7 @@ class EmployeeDashboard extends StatefulWidget {
 }
 
 class _EmployeeDashboardState extends State<EmployeeDashboard> {
+  final ScrollController _scrollController = ScrollController();
   Timer? _refreshTimer;
   @override
   void initState() {
@@ -47,6 +48,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -94,7 +96,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         child: RepaintBoundary(
           child: Scrollbar(
             thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+            controller: _scrollController,
             child: SingleChildScrollView(
+              controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(

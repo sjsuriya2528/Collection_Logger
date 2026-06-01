@@ -20,6 +20,7 @@ class AllCollectionsHistoryScreen extends StatefulWidget {
 }
 
 class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScreen> {
+  final ScrollController _scrollController = ScrollController();
   List<dynamic> _allCollections = [];
   bool _isLoading = true;
   DateTime? _startDate;
@@ -35,6 +36,12 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     _startDate = DateTime(now.year, now.month, now.day);
     _endDate = DateTime(now.year, now.month, now.day);
     _fetchData();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _applyQuickFilter(String type) {
@@ -182,7 +189,9 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                 ? const Center(child: Text('No records found', style: TextStyle(color: Colors.white38)))
                 : Scrollbar(
                     thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+                    controller: _scrollController,
                     child: ListView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(16),
                       itemCount: _cachedFilteredCollections.length,
                       itemBuilder: (context, index) {
@@ -315,7 +324,6 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                         _endDate = null; 
                         _selectedMode = 'all'; 
                         _selectedStatusFilter = 'all';
-                        Navigator.pop(context);
                         _fetchData(); // Re-fetch everything from server
                       },
                       child: const Text('Clear', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),

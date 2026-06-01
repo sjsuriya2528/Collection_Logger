@@ -308,8 +308,8 @@ class ApiService {
     String url = '$baseUrl/api/admin/collections';
     // Send date range to server so it only returns relevant records
     if (startDate != null && endDate != null) {
-      final start = startDate.toUtc().toIso8601String().split('T').first;
-      final end = endDate.toUtc().toIso8601String().split('T').first;
+      final start = '${startDate.year}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}';
+      final end = '${endDate.year}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}';
       url += '?startDate=$start&endDate=$end';
     }
     final response = await http.get(
