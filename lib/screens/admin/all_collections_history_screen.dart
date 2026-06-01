@@ -73,7 +73,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
         auth.user!.token!,
         startDate: _startDate,
         endDate: _endDate,
-      );
+      ).timeout(const Duration(seconds: 10), onTimeout: () => []);
       _allCollections = data;
       _isLoading = false;
       _updateFilteredData();
@@ -164,44 +164,75 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Collection History', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text('All History', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          _buildReportsButton(),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.cyanAccent),
+            tooltip: 'Generate Report',
+            onPressed: _showReportOptions,
+          ),
+          _isLoading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                  tooltip: 'Refresh',
+                  onPressed: _fetchData,
+                ),
           IconButton(
             icon: Icon(
               Icons.tune_rounded, 
-              color: (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all') ? Colors.cyanAccent : Colors.white
+              color: (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all') ? Colors.cyanAccent : Colors.white,
             ),
+            tooltip: 'Filters',
             onPressed: _showFilterBottomSheet,
           ),
-          const SizedBox(width: 8),
         ],
       ),
-      body: Column(
-        children: [
-          _buildFilters(),
-          _buildSummaryCards(),
-          Expanded(
-            child: _isLoading 
-              ? const Center(child: CircularProgressIndicator(color: Colors.cyanAccent))
-              : _cachedFilteredCollections.isEmpty 
-                ? const Center(child: Text('No records found', style: TextStyle(color: Colors.white38)))
-                : Scrollbar(
-                    thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
-                    controller: _scrollController,
-                    child: ListView.builder(
+      body: RefreshIndicator(
+        color: Colors.cyanAccent,
+        backgroundColor: const Color(0xFF16213E),
+        onRefresh: _fetchData,
+        child: Column(
+          children: [
+            _buildFilters(),
+            _buildSummaryCards(),
+            Expanded(
+              child: _isLoading 
+                ? const Center(child: CircularProgressIndicator(color: Colors.cyanAccent))
+                : _cachedFilteredCollections.isEmpty 
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+                        const Center(child: Text('No records found', style: TextStyle(color: Colors.white38))),
+                        const SizedBox(height: 8),
+                        const Center(child: Text('Pull down to refresh', style: TextStyle(color: Colors.white24, fontSize: 12))),
+                      ],
+                    )
+                  : Scrollbar(
+                      thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
                       controller: _scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _cachedFilteredCollections.length,
-                      itemBuilder: (context, index) {
-                        final coll = _cachedFilteredCollections[index];
-                        return _buildCollectionCard(coll);
-                      },
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(16),
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        itemCount: _cachedFilteredCollections.length,
+                        itemBuilder: (context, index) {
+                          final coll = _cachedFilteredCollections[index];
+                          return _buildCollectionCard(coll);
+                        },
+                      ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -268,17 +299,56 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
   }
 
   Future<void> _generatePdf(String type) async {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Generating PDF Report...')));
+    // Show loading overlay
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF16213E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 3),
+                const SizedBox(height: 20),
+                const Text(
+                  'Generating PDF Report...',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${_cachedFilteredCollections.length} records',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Yield the event loop so the dialog can render before heavy synchronous work blocks the UI thread
+    await Future.delayed(const Duration(milliseconds: 150));
+
     try {
-      final pdf = type == 'employee' 
+      final pdfBytes = type == 'employee' 
         ? await PdfService.generateEmployeeWiseReport(collections: _cachedFilteredCollections, startDate: _startDate, endDate: _endDate)
         : await PdfService.generateCollectionWiseReport(collections: _cachedFilteredCollections, startDate: _startDate, endDate: _endDate);
       
       if (mounted) {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => PdfPreviewScreen(pdf: pdf, fileName: 'Collection_Report_$type.pdf')));
+        Navigator.pop(context); // Close loading dialog
+        Navigator.push(context, MaterialPageRoute(builder: (context) => PdfPreviewScreen(pdfBytes: pdfBytes, fileName: 'Collection_Report_$type.pdf')));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent));
+      }
     }
   }
 
@@ -337,6 +407,12 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
   }
 
   void _showFilterBottomSheet() {
+    // Temp variables so canceling won't commit half-applied filters
+    DateTime? tempStart = _startDate;
+    DateTime? tempEnd = _endDate;
+    String tempMode = _selectedMode;
+    String tempStatus = _selectedStatusFilter;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -363,10 +439,10 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                     const SizedBox(height: 12),
                     Row(
                       children: ['all', 'partial', 'completed'].map((s) {
-                        final isSelected = _selectedStatusFilter == s;
+                        final isSelected = tempStatus == s;
                         return Expanded(
                           child: GestureDetector(
-                            onTap: () => setModalState(() => _selectedStatusFilter = s),
+                            onTap: () => setModalState(() => tempStatus = s),
                             child: Container(
                               margin: EdgeInsets.only(right: s == 'completed' ? 0 : 8),
                               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -392,9 +468,9 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: ['all', 'cash', 'upi', 'cheque'].map((m) {
-                          final isSelected = _selectedMode == m;
+                          final isSelected = tempMode == m;
                           return GestureDetector(
-                            onTap: () => setModalState(() => _selectedMode = m),
+                            onTap: () => setModalState(() => tempMode = m),
                             child: Container(
                               margin: const EdgeInsets.only(right: 8),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -426,9 +502,9 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        Expanded(child: _buildDateTile('Start Date', _startDate, (d) => setModalState(() => _startDate = d))),
+                        Expanded(child: _buildDateTile('Start Date', tempStart, (d) => setModalState(() => tempStart = d))),
                         const SizedBox(width: 12),
-                        Expanded(child: _buildDateTile('End Date', _endDate, (d) => setModalState(() => _endDate = d))),
+                        Expanded(child: _buildDateTile('End Date', tempEnd, (d) => setModalState(() => tempEnd = d))),
                       ],
                     ),
                     const SizedBox(height: 32),
@@ -437,6 +513,12 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
+                          setState(() {
+                            _startDate = tempStart;
+                            _endDate = tempEnd;
+                            _selectedMode = tempMode;
+                            _selectedStatusFilter = tempStatus;
+                          });
                           _updateFilteredData(); // Apply mode/status filters locally
                           Navigator.pop(context);
                           // If date changed, re-fetch from server

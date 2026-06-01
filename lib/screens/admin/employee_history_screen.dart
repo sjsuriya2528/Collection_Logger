@@ -62,7 +62,8 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     setState(() => _isLoading = true);
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
-      final data = await ApiService.getEmployeeCollections(widget.employeeId, auth.user!.token!);
+      final data = await ApiService.getEmployeeCollections(widget.employeeId, auth.user!.token!)
+          .timeout(const Duration(seconds: 10), onTimeout: () => []);
       _collections = data;
       
       final Map<String, int> finCounts = {};
@@ -225,8 +226,13 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            tooltip: 'Refresh',
+            onPressed: _isLoading ? null : _fetchHistory,
+          ),
+          IconButton(
             icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.cyanAccent),
-            onPressed: () async {
+              onPressed: () async {
               if (_cachedFiltered.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('No records to export')),
@@ -234,12 +240,44 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                 return;
               }
               
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Generating PDF Report...'), duration: Duration(seconds: 2)),
+              // Show loading overlay
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => PopScope(
+                  canPop: false,
+                  child: AlertDialog(
+                    backgroundColor: const Color(0xFF16213E),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    content: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 3),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Generating PDF Report...',
+                            style: TextStyle(color: Colors.white70, fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${_cachedFiltered.length} records',
+                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               );
 
+              // Yield the event loop so the dialog can render before heavy synchronous work blocks the UI thread
+              await Future.delayed(const Duration(milliseconds: 150));
+
               try {
-                final pdf = await PdfService.generateEmployeeReport(
+                final pdfBytes = await PdfService.generateEmployeeReport(
                   employeeName: widget.employeeName,
                   collections: _cachedFiltered,
                   startDate: _startDate,
@@ -247,11 +285,12 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                 );
 
                 if (mounted) {
+                  Navigator.pop(context); // Close loading dialog
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => PdfPreviewScreen(
-                        pdf: pdf,
+                        pdfBytes: pdfBytes,
                         fileName: '${widget.employeeName}_Report.pdf',
                       ),
                     ),
@@ -259,6 +298,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                 }
               } catch (e) {
                 if (mounted) {
+                  Navigator.pop(context); // Close loading dialog
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error generating PDF: $e'), backgroundColor: Colors.redAccent),
                   );
@@ -834,6 +874,12 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
   }
 
   void _showFilterBottomSheet() {
+    // Use temp variables so canceling doesn't apply half-changes
+    DateTime? tempStart = _startDate;
+    DateTime? tempEnd = _endDate;
+    String tempMode = _selectedMode;
+    String tempStatus = _selectedStatusFilter;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -860,10 +906,10 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: ['all', 'partial', 'completed'].map((s) {
-                        final isSelected = _selectedStatusFilter == s;
+                        final isSelected = tempStatus == s;
                         return Expanded(
                           child: GestureDetector(
-                            onTap: () => setModalState(() => _selectedStatusFilter = s),
+                            onTap: () => setModalState(() => tempStatus = s),
                             child: Container(
                               margin: EdgeInsets.only(right: s == 'completed' ? 0 : 8),
                               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -889,9 +935,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: ['all', 'cash', 'upi', 'cheque'].map((m) {
-                          final isSelected = _selectedMode == m;
+                          final isSelected = tempMode == m;
                           return GestureDetector(
-                            onTap: () => setModalState(() => _selectedMode = m),
+                            onTap: () => setModalState(() => tempMode = m),
                             child: Container(
                               margin: const EdgeInsets.only(right: 8),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -923,9 +969,9 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        Expanded(child: _buildDateTile('Start Date', _startDate, (d) => setModalState(() => _startDate = d))),
+                        Expanded(child: _buildDateTile('Start Date', tempStart, (d) => setModalState(() => tempStart = d))),
                         const SizedBox(width: 12),
-                        Expanded(child: _buildDateTile('End Date', _endDate, (d) => setModalState(() => _endDate = d))),
+                        Expanded(child: _buildDateTile('End Date', tempEnd, (d) => setModalState(() => tempEnd = d))),
                       ],
                     ),
                     const SizedBox(height: 32),
@@ -934,7 +980,14 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
-                          setState(() {});
+                          // Commit temp values to parent state and re-filter
+                          setState(() {
+                            _startDate = tempStart;
+                            _endDate = tempEnd;
+                            _selectedMode = tempMode;
+                            _selectedStatusFilter = tempStatus;
+                          });
+                          _updateFilteredData();
                           Navigator.pop(context);
                         },
                         style: ElevatedButton.styleFrom(

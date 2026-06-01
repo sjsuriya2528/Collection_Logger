@@ -7,12 +7,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 
 class PdfPreviewScreen extends StatelessWidget {
-  final pw.Document pdf;
+  final Uint8List pdfBytes;
   final String fileName;
 
   const PdfPreviewScreen({
     super.key,
-    required this.pdf,
+    required this.pdfBytes,
     this.fileName = 'report.pdf',
   });
 
@@ -65,7 +65,7 @@ class PdfPreviewScreen extends StatelessWidget {
                 subtitle: 'Send to local printer',
                 icon: Icons.print_rounded,
                 color: Colors.cyanAccent,
-                onTap: () => Printing.layoutPdf(onLayout: (format) => pdf.save(), name: fileName),
+                onTap: () => Printing.layoutPdf(onLayout: (format) async => pdfBytes, name: fileName),
               ),
               const SizedBox(height: 16),
               _buildActionButton(
@@ -144,7 +144,7 @@ class PdfPreviewScreen extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => Printing.layoutPdf(onLayout: (format) => pdf.save(), name: fileName),
+                  onPressed: () => Printing.layoutPdf(onLayout: (format) async => pdfBytes, name: fileName),
                   icon: const Icon(Icons.print_rounded),
                   label: const Text('PRINT'),
                   style: ElevatedButton.styleFrom(
@@ -178,7 +178,7 @@ class PdfPreviewScreen extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: PdfPreview(
-        build: (format) => pdf.save(),
+        build: (format) async => pdfBytes,
         allowPrinting: false, // We use our own buttons
         allowSharing: false,
         canChangePageFormat: false,
@@ -250,14 +250,11 @@ class PdfPreviewScreen extends StatelessWidget {
   }
 
   Future<void> _sharePdf() async {
-    final bytes = await pdf.save();
-    await Printing.sharePdf(bytes: bytes, filename: fileName);
+    await Printing.sharePdf(bytes: pdfBytes, filename: fileName);
   }
 
   Future<void> _saveAsFile(BuildContext context) async {
     try {
-      final bytes = await pdf.save();
-      
       // Use FilePicker to choose location on Desktop/Mobile
       final String? outputFile = await FilePicker.platform.saveFile(
         dialogTitle: 'Save Report as PDF',
@@ -268,7 +265,7 @@ class PdfPreviewScreen extends StatelessWidget {
 
       if (outputFile != null) {
         final file = File(outputFile);
-        await file.writeAsBytes(bytes);
+        await file.writeAsBytes(pdfBytes);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

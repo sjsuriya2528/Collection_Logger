@@ -222,7 +222,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Hello, $name 👋',
+                        ' $name ',
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,

@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../models/shop_balance.dart';
 import 'dart:io';
+import 'package:intl/intl.dart';
 
 class CollectionBalanceScreen extends StatefulWidget {
   const CollectionBalanceScreen({super.key});
@@ -627,12 +628,29 @@ class _CollectionBalanceScreenState extends State<CollectionBalanceScreen> {
     double totalBalance = _filteredBalances.fold(0.0, (sum, item) => sum + item.amount);
     final bool hasFilters = _hasActiveFilters();
 
+    DateTime? latestUpdate;
+    for (var b in _allBalances) {
+      if (b.updatedAt != null) {
+        if (latestUpdate == null || b.updatedAt!.isAfter(latestUpdate)) {
+          latestUpdate = b.updatedAt;
+        }
+      }
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1A2E),
         elevation: 0,
-        title: const Text('Collection Balance', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Shop Balance', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+            if (latestUpdate != null)
+              Text('Last updated: ${DateFormat('dd MMM, hh:mm a').format(latestUpdate!.toLocal())}', 
+                style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.normal)),
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
           onPressed: () => Navigator.pop(context),

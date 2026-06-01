@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
-import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/collection_provider.dart';
 import '../../models/collection.dart';
@@ -26,6 +24,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   final ScrollController _scrollController = ScrollController();
   String _searchQuery = "";
   final Set<String> _expandedGroups = {};
+  bool _isRefreshing = false;
 
   @override
   void initState() {
@@ -33,6 +32,22 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, now.day);
     _endDate = DateTime(now.year, now.month, now.day);
+  }
+
+  Future<void> _refresh() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      final provider = Provider.of<CollectionProvider>(context, listen: false);
+      await provider.pullFromServer(
+        auth.user!.token!,
+        auth.user!.id.toString(),
+      ).timeout(const Duration(seconds: 10), onTimeout: () {});
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
 
   @override
@@ -45,18 +60,23 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   void _applyQuickFilter(String type) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
+    DateTime newStart;
+    DateTime newEnd;
+
+    if (type == 'Today') {
+      newStart = today;
+      newEnd = today;
+    } else if (type == 'Yesterday') {
+      newStart = today.subtract(const Duration(days: 1));
+      newEnd = today.subtract(const Duration(days: 1));
+    } else {
+      newStart = today.subtract(const Duration(days: 7));
+      newEnd = today;
+    }
+    // Apply to parent state so the list updates immediately
     setState(() {
-      if (type == 'Today') {
-        _startDate = today;
-        _endDate = today;
-      } else if (type == 'Yesterday') {
-        _startDate = today.subtract(const Duration(days: 1));
-        _endDate = today.subtract(const Duration(days: 1));
-      } else if (type == 'Last 7 Days') {
-        _startDate = today.subtract(const Duration(days: 7));
-        _endDate = today;
-      }
+      _startDate = newStart;
+      _endDate = newEnd;
     });
     Navigator.pop(context);
   }
@@ -138,10 +158,24 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
         title: const Text('History', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // Manual refresh button
+          _isRefreshing
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 2),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                  tooltip: 'Refresh',
+                  onPressed: _refresh,
+                ),
           IconButton(
             icon: Icon(
               Icons.tune_rounded, 
-              color: (_startDate != null || _selectedMode != 'all') ? Colors.cyanAccent : Colors.white
+              color: (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all') ? Colors.cyanAccent : Colors.white
             ),
             onPressed: () => _showFilterBottomSheet(),
           ),
@@ -207,24 +241,20 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
               ),
             ),
           Expanded(
-            child: filtered.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  color: Colors.cyanAccent,
-                  backgroundColor: const Color(0xFF1A1A2E),
-                  onRefresh: () async {
-                    final auth = Provider.of<AuthProvider>(context, listen: false);
-                    final provider = Provider.of<CollectionProvider>(context, listen: false);
-                    await provider.pullFromServer(auth.user!.token!, auth.user!.id.toString());
-                  },
-                  child: RepaintBoundary(
+            child: RefreshIndicator(
+              color: Colors.cyanAccent,
+              backgroundColor: const Color(0xFF1A1A2E),
+              onRefresh: _refresh,
+              child: filtered.isEmpty
+                ? _buildEmptyState()
+                : RepaintBoundary(
                     child: Scrollbar(
                       thumbVisibility: Platform.isWindows || Platform.isMacOS || Platform.isLinux,
                       controller: _scrollController,
                       child: ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(20),
-                        physics: const AlwaysScrollableScrollPhysics(), // Ensures swipe works even if list is short
+                        physics: const AlwaysScrollableScrollPhysics(),
                         itemCount: groupIds.length,
                         itemBuilder: (context, index) {
                           final gid = groupIds[index];
@@ -234,7 +264,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                       ),
                     ),
                   ),
-                ),
+            ),
           ),
 
         ],
@@ -243,6 +273,12 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   }
 
   void _showFilterBottomSheet() {
+    // Use temporary local copies so we can cancel without side effects
+    DateTime? tempStart = _startDate;
+    DateTime? tempEnd = _endDate;
+    String tempMode = _selectedMode;
+    String tempStatus = _selectedStatusFilter;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -269,10 +305,10 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: ['all', 'partial', 'completed'].map((s) {
-                        final isSelected = _selectedStatusFilter == s;
+                        final isSelected = tempStatus == s;
                         return Expanded(
                           child: GestureDetector(
-                            onTap: () => setModalState(() => _selectedStatusFilter = s),
+                            onTap: () => setModalState(() => tempStatus = s),
                             child: Container(
                               margin: EdgeInsets.only(right: s == 'completed' ? 0 : 8),
                               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -298,9 +334,9 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: ['all', 'cash', 'upi', 'cheque'].map((m) {
-                          final isSelected = _selectedMode == m;
+                          final isSelected = tempMode == m;
                           return GestureDetector(
-                            onTap: () => setModalState(() => _selectedMode = m),
+                            onTap: () => setModalState(() => tempMode = m),
                             child: Container(
                               margin: const EdgeInsets.only(right: 8),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -332,9 +368,9 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        Expanded(child: _buildDateTile('Start Date', _startDate, (d) => setModalState(() => _startDate = d))),
+                        Expanded(child: _buildDateTile('Start Date', tempStart, (d) => setModalState(() => tempStart = d))),
                         const SizedBox(width: 12),
-                        Expanded(child: _buildDateTile('End Date', _endDate, (d) => setModalState(() => _endDate = d))),
+                        Expanded(child: _buildDateTile('End Date', tempEnd, (d) => setModalState(() => tempEnd = d))),
                       ],
                     ),
                     const SizedBox(height: 32),
@@ -343,7 +379,13 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
-                          setState(() {});
+                          // Apply all temp values back to parent state at once
+                          setState(() {
+                            _startDate = tempStart;
+                            _endDate = tempEnd;
+                            _selectedMode = tempMode;
+                            _selectedStatusFilter = tempStatus;
+                          });
                           Navigator.pop(context);
                         },
                         style: ElevatedButton.styleFrom(
@@ -425,15 +467,24 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.search_off_rounded, size: 80, color: Colors.white.withOpacity(0.1)),
-          const SizedBox(height: 16),
-          const Text('No records found for these filters', style: TextStyle(color: Colors.white60)),
-        ],
-      ),
+    // Must be a ListView so RefreshIndicator triggers on pull-down
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+        Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.search_off_rounded, size: 80, color: Colors.white.withOpacity(0.1)),
+              const SizedBox(height: 16),
+              const Text('No records found for these filters', style: TextStyle(color: Colors.white60)),
+              const SizedBox(height: 8),
+              const Text('Pull down to refresh', style: TextStyle(color: Colors.white24, fontSize: 12)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

@@ -162,6 +162,135 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     );
   }
 
+  /// Opens a full-screen proof viewer for the given [proofPath].
+  /// Handles both local file paths and remote/upload URLs.
+  void _viewProof(String proofPath) {
+    final bool isLocal = !proofPath.startsWith('http') && !proofPath.startsWith('/uploads');
+    final ImageProvider imageProvider = isLocal
+        ? FileImage(File(proofPath))
+        : NetworkImage(ApiService.getImageUrl(proofPath)) as ImageProvider;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: const Text('Proof', style: TextStyle(color: Colors.white)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5.0,
+              child: Image(
+                image: imageProvider,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.broken_image_rounded, color: Colors.white38, size: 64),
+                    SizedBox(height: 12),
+                    Text('Could not load image', style: TextStyle(color: Colors.white38)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shows a bottom sheet with options: View Proof, Choose from Gallery, Take a Photo.
+  /// [currentProofPath] is the already-uploaded proof path.
+  /// [onPicked] is called with the new path when the user replaces the proof.
+  void _showProofOptions(String currentProofPath, Function(String) onPicked) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Icon(Icons.image_rounded, color: Colors.cyanAccent, size: 18),
+                SizedBox(width: 8),
+                Text('Proof Options', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              ],
+            ),
+          ),
+          const Divider(color: Colors.white10),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.cyanAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              child: const Icon(Icons.visibility_rounded, color: Colors.cyanAccent, size: 20),
+            ),
+            title: const Text('View Proof', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            subtitle: const Text('Preview the uploaded proof', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            onTap: () {
+              Navigator.pop(context);
+              _viewProof(currentProofPath);
+            },
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.purpleAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              child: const Icon(Icons.photo_library_rounded, color: Colors.purpleAccent, size: 20),
+            ),
+            title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            subtitle: const Text('Replace with a photo from gallery', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            onTap: () async {
+              Navigator.pop(context);
+              final picked = await _picker.pickImage(
+                source: ImageSource.gallery,
+                imageQuality: 85,
+                maxWidth: 1800,
+                maxHeight: 1800,
+              );
+              if (picked != null) onPicked(picked.path);
+            },
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              child: const Icon(Icons.camera_alt_rounded, color: Colors.orangeAccent, size: 20),
+            ),
+            title: const Text('Take a Photo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            subtitle: const Text('Capture a new photo with camera', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            onTap: () async {
+              Navigator.pop(context);
+              final picked = await _picker.pickImage(
+                source: ImageSource.camera,
+                imageQuality: 85,
+                maxWidth: 1800,
+                maxHeight: 1800,
+              );
+              if (picked != null) onPicked(picked.path);
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     
@@ -467,8 +596,14 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
             children: [
               _buildProofButton(
                 label: 'Bill Photo (${bill.billProofs.length})', 
-                file: bill.billProofs.isNotEmpty ? File(bill.billProofs.last) : null, 
+                hasProof: bill.billProofs.isNotEmpty,
+                previewPath: bill.billProofs.isNotEmpty ? bill.billProofs.last : null,
                 onTap: () => _pickImage((path) => setState(() => bill.billProofs.add(path))),
+                onTapExisting: bill.billProofs.isNotEmpty
+                    ? () => _showProofOptions(bill.billProofs.last, (path) => setState(() {
+                          bill.billProofs[bill.billProofs.length - 1] = path;
+                        }))
+                    : null,
                 onLink: bill.billProofs.isEmpty ? null : () => _showLinkDialog(index, bill.billProofs, false),
               ),
               if (bill.billProofs.isNotEmpty) ...[
@@ -497,32 +632,50 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                       }
                       final proof = bill.billProofs[idx];
                       final isLocal = !proof.startsWith('http') && !proof.startsWith('/uploads');
-                      return Stack(
-                        children: [
-                          Container(
-                            margin: const EdgeInsets.only(right: 8),
-                            width: 60,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.white24),
-                              image: DecorationImage(
-                                image: isLocal ? FileImage(File(proof)) as ImageProvider : NetworkImage(ApiService.getImageUrl(proof)),
-                                fit: BoxFit.cover,
+                      return GestureDetector(
+                        onTap: () => _showProofOptions(
+                          proof,
+                          (newPath) => setState(() => bill.billProofs[idx] = newPath),
+                        ),
+                        child: Stack(
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              width: 60,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.cyanAccent.withOpacity(0.4)),
+                                image: DecorationImage(
+                                  image: isLocal ? FileImage(File(proof)) as ImageProvider : NetworkImage(ApiService.getImageUrl(proof)),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(8), bottomRight: Radius.circular(8)),
+                                  ),
+                                  child: const Icon(Icons.visibility_rounded, color: Colors.white70, size: 10),
+                                ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            top: 2, right: 10,
-                            child: GestureDetector(
-                              onTap: () => setState(() => bill.billProofs.removeAt(idx)),
-                              child: Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                                child: const Icon(Icons.close, size: 12, color: Colors.white),
+                            Positioned(
+                              top: 2, right: 10,
+                              child: GestureDetector(
+                                onTap: () => setState(() => bill.billProofs.removeAt(idx)),
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                  child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       );
                     },
                   ),
@@ -533,8 +686,15 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
           if (showBillProof && showPaymentProof) const SizedBox(width: 12),
           if (showPaymentProof) Expanded(child: _buildProofButton(
             label: 'Payment Proof', 
-            file: (bill.paymentProof != null && bill.paymentProof!.isNotEmpty) ? File(bill.paymentProof!) : null, 
+            hasProof: bill.paymentProof != null && bill.paymentProof!.isNotEmpty,
+            previewPath: (bill.paymentProof != null && bill.paymentProof!.isNotEmpty &&
+                !bill.paymentProof!.startsWith('http') && !bill.paymentProof!.startsWith('/uploads'))
+                ? bill.paymentProof
+                : null,
             onTap: () => _pickImage((path) => setState(() => bill.paymentProof = path)),
+            onTapExisting: (bill.paymentProof != null && bill.paymentProof!.isNotEmpty)
+                ? () => _showProofOptions(bill.paymentProof!, (path) => setState(() => bill.paymentProof = path))
+                : null,
             onLink: (bill.paymentProof == null || bill.paymentProof!.isEmpty) ? null : () => _showLinkDialog(index, bill.paymentProof!, true),
           )),
         ]),
@@ -654,32 +814,54 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
     );
   }
 
-  Widget _buildProofButton({required String label, File? file, required VoidCallback onTap, VoidCallback? onLink}) {
+  Widget _buildProofButton({
+    required String label,
+    /// Whether a proof has been uploaded (local or remote).
+    required bool hasProof,
+    /// Local file path for preview thumbnail. Null if proof is remote or not yet uploaded.
+    String? previewPath,
+    /// Called when no proof exists yet — opens the image picker.
+    required VoidCallback onTap,
+    /// Called when a proof already exists — opens the view/replace options sheet.
+    VoidCallback? onTapExisting,
+    VoidCallback? onLink,
+  }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: hasProof ? (onTapExisting ?? onTap) : onTap,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.03),
+          color: hasProof ? Colors.green.withOpacity(0.05) : Colors.white.withOpacity(0.03),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.1), style: BorderStyle.solid),
+          border: Border.all(
+            color: hasProof ? Colors.greenAccent.withOpacity(0.3) : Colors.white.withOpacity(0.1),
+            style: BorderStyle.solid,
+          ),
         ),
         child: Column(
           children: [
             Row(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: file != null ? Colors.green.withOpacity(0.1) : Colors.cyanAccent.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    file != null ? Icons.check_circle_rounded : Icons.add_a_photo_rounded,
-                    color: file != null ? Colors.greenAccent : Colors.cyanAccent,
-                    size: 20,
+                // Thumbnail preview or icon
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: previewPath != null
+                        ? Image.file(File(previewPath), fit: BoxFit.cover)
+                        : Container(
+                            decoration: BoxDecoration(
+                              color: hasProof ? Colors.green.withOpacity(0.1) : Colors.cyanAccent.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              hasProof ? Icons.check_circle_rounded : Icons.add_a_photo_rounded,
+                              color: hasProof ? Colors.greenAccent : Colors.cyanAccent,
+                              size: 20,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -689,15 +871,17 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                     children: [
                       Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                       Text(
-                        file != null ? 'Selected' : 'Tap to upload',
-                        style: TextStyle(color: file != null ? Colors.greenAccent : Colors.white38, fontSize: 10),
+                        hasProof ? 'Tap to view or replace' : 'Tap to upload',
+                        style: TextStyle(color: hasProof ? Colors.greenAccent : Colors.white38, fontSize: 10),
                       ),
                     ],
                   ),
                 ),
+                if (hasProof)
+                  const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 18),
               ],
             ),
-            if (file != null && onLink != null) ...[
+            if (hasProof && onLink != null) ...[
               const SizedBox(height: 8),
               const Divider(color: Colors.white10, height: 1),
               const SizedBox(height: 4),
@@ -708,9 +892,9 @@ class _AddCollectionScreenState extends State<AddCollectionScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.link_rounded, color: Colors.cyanAccent, size: 14),
+                      const Icon(Icons.link_rounded, color: Colors.cyanAccent, size: 14),
                       const SizedBox(width: 4),
-                      Text('LINK TO OTHERS', style: TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                      const Text('LINK TO OTHERS', style: TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                     ],
                   ),
                 ),
