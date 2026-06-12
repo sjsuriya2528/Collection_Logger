@@ -10,7 +10,9 @@ import 'add_collection_screen.dart';
 import '../common/full_screen_image_viewer.dart';
 
 class CollectionHistoryScreen extends StatefulWidget {
-  const CollectionHistoryScreen({super.key});
+  final String initialMode;
+  
+  const CollectionHistoryScreen({super.key, this.initialMode = 'all'});
 
   @override
   State<CollectionHistoryScreen> createState() => _CollectionHistoryScreenState();
@@ -18,7 +20,7 @@ class CollectionHistoryScreen extends StatefulWidget {
 class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
-  String _selectedMode = 'all';
+  late String _selectedMode;
   String _selectedStatusFilter = 'all';
   final _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -32,6 +34,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, now.day);
     _endDate = DateTime(now.year, now.month, now.day);
+    _selectedMode = widget.initialMode;
   }
 
   Future<void> _refresh() async {

@@ -7,6 +7,14 @@ class SyncService {
   static StreamSubscription<List<ConnectivityResult>>? _subscription;
 
   static void initialize(CollectionProvider collProvider, AuthProvider authProvider) {
+    // 1. Check current state immediately on startup
+    Connectivity().checkConnectivity().then((List<ConnectivityResult> results) {
+      if (results.isNotEmpty && results.first != ConnectivityResult.none && authProvider.isAuthenticated) {
+        collProvider.syncAllPending(authProvider.user!.token!);
+      }
+    });
+
+    // 2. Listen for future network toggles
     _subscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
       if (results.isNotEmpty && results.first != ConnectivityResult.none && authProvider.isAuthenticated) {
         collProvider.syncAllPending(authProvider.user!.token!);

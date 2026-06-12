@@ -653,6 +653,16 @@ app.get('/api/collections/mine', authenticateToken, async (req, res) => {
 // ADMIN DASHBOARD
 const moment = require('moment-timezone');
 
+app.post('/api/admin/alert', authenticateToken, async (req, res) => {
+  const { title, body } = req.body;
+  try {
+    await sendAdminNotification(title, body);
+    res.json({ message: 'Alert sent successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/employees', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
   try {

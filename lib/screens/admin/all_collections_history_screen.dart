@@ -13,7 +13,9 @@ import '../../models/collection.dart';
 import '../common/full_screen_image_viewer.dart';
 
 class AllCollectionsHistoryScreen extends StatefulWidget {
-  const AllCollectionsHistoryScreen({super.key});
+  final String initialMode;
+
+  const AllCollectionsHistoryScreen({super.key, this.initialMode = 'all'});
 
   @override
   State<AllCollectionsHistoryScreen> createState() => _AllCollectionsHistoryScreenState();
@@ -25,7 +27,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
   bool _isLoading = true;
   DateTime? _startDate;
   DateTime? _endDate;
-  String _selectedMode = 'all';
+  late String _selectedMode;
   String _selectedStatusFilter = 'all';
   final TextEditingController _searchController = TextEditingController();
 
@@ -35,6 +37,7 @@ class _AllCollectionsHistoryScreenState extends State<AllCollectionsHistoryScree
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, now.day);
     _endDate = DateTime(now.year, now.month, now.day);
+    _selectedMode = widget.initialMode;
     _fetchData();
   }
 

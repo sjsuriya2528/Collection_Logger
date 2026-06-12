@@ -111,6 +111,24 @@ class ApiService {
     }
   }
 
+  static Future<void> sendAdminAlert(String title, String body, String token) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/admin/alert'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'title': title, 'body': body}),
+      );
+      if (response.statusCode != 200) {
+        print('Failed to send admin alert: ${response.body}');
+      }
+    } catch (e) {
+      print('Admin Alert API Error: $e');
+    }
+  }
+
   static Future<void> requestChangeOTP(String token) async {
     final response = await http.post(
       Uri.parse('$baseUrl/api/auth/request-change-otp'),
