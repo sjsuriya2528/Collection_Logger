@@ -73,15 +73,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
         if (latestEvent != null) {
           final eventId = int.tryParse(latestEvent['id']?.toString() ?? '0') ?? 0;
           
-          // Notify if it's a NEW event or the very first one we see
-          if (eventId > (_lastEventId ?? -1)) {
+          // Prevent showing old notifications on first load and prevent concurrent double triggers
+          if (_lastEventId == null) {
+            _lastEventId = eventId;
+          } else if (eventId > _lastEventId!) {
+            _lastEventId = eventId; // Update immediately before showing to prevent double triggers
             _showEventNotification(latestEvent);
           }
           
           setState(() {
             _summary = summary;
             _employees = emps;
-            _lastEventId = eventId;
           });
         } else {
           setState(() {
