@@ -215,7 +215,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
           ),
           
           // Summary Header
-          _buildSummaryHeader(total, cash, upi, cheque),
+          _buildSummaryHeader(total, cash, upi, cheque, filtered.length),
 
           if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all')
             Padding(
@@ -857,7 +857,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     );
   }
 
-  Widget _buildSummaryHeader(double total, double cash, double upi, double cheque) {
+  Widget _buildSummaryHeader(double total, double cash, double upi, double cheque, int count) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Column(
@@ -884,6 +884,8 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                         children: [
                           const Text('Total Collection', style: TextStyle(color: Colors.white60, fontSize: 12)),
                           Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text('No of Outlets: $count', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const Icon(Icons.account_balance_wallet_rounded, color: Colors.cyanAccent, size: 32),

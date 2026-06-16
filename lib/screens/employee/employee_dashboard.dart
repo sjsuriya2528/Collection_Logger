@@ -9,6 +9,7 @@ import '../../models/collection.dart';
 import '../../services/api_service.dart';
 import '../../services/notification_service.dart';
 import '../common/collection_balance_screen.dart';
+import '../../widgets/update_dialog.dart';
 import 'add_collection_screen.dart';
 import 'history_screen.dart';
 
@@ -26,6 +27,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateDialog.showIfNeeded(context);
+      
       final auth = Provider.of<AuthProvider>(context, listen: false);
       
       // Register token for notifications (Ensures token is updated if role changed)
@@ -106,7 +109,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 children: [
                   _buildHeader(auth.user?.name ?? 'User'),
                   const SizedBox(height: 24),
-                  _buildTotalCard(collProvider.todayTotal),
+                  _buildTotalCard(collProvider.todayTotal, collProvider.todayCount),
                   const SizedBox(height: 16),
                   _buildModeCards(collProvider.modeBreakdown),
                   const SizedBox(height: 24),
@@ -248,7 +251,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
-  Widget _buildTotalCard(double total) {
+  Widget _buildTotalCard(double total, int count) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(28),
@@ -270,6 +273,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           Text(
             '₹${total.toStringAsFixed(2)}',
             style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w900, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'No of Outlets: $count',
+            style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
           ),
         ],
       ),

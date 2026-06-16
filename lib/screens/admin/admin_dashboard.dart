@@ -12,6 +12,7 @@ import 'employee_history_screen.dart';
 import 'dart:io';
 import 'all_collections_history_screen.dart';
 import '../common/collection_balance_screen.dart';
+import '../../widgets/update_dialog.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -31,6 +32,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateDialog.showIfNeeded(context);
+    });
     // Register token for notifications
     // Register token for notifications
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -467,9 +471,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(
-                emp['name'], 
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    emp['name'], 
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'No of Outlets: ${emp['today_count'] ?? 0}',
+                    style: const TextStyle(color: Colors.cyanAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
             ),
             Column(

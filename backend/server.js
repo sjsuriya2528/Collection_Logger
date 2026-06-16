@@ -186,6 +186,7 @@ app.get('/', (req, res) => res.send('ACM Collection Logger Backend is running'))
 app.get('/api/auth/signup', (req, res) => res.send('Signup endpoint is alive. Use POST to register.'));
 
 app.use('/uploads', express.static('D:/Projects/Collection_Logger/backend/uploads'));
+app.use('/downloads', express.static('D:/Projects/Collection_Logger/backend/downloads'));
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -286,6 +287,18 @@ const ensureColumns = async () => {
         id SERIAL PRIMARY KEY,
         shop_name TEXT NOT NULL,
         amount DECIMAL NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create App Versions table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS app_versions (
+        platform TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        url TEXT NOT NULL,
+        force_update BOOLEAN DEFAULT false,
+        release_notes TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -667,7 +680,7 @@ app.get('/api/employees', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
   try {
     const result = await db.query(`
-      SELECT u.id as user_id, u.name, COALESCE(SUM(c.amount), 0) as today_total
+      SELECT u.id as user_id, u.name, COALESCE(SUM(c.amount), 0) as today_total, COUNT(c.id) as today_count
       FROM users u
       LEFT JOIN collections c ON u.id = c.employee_id 
         AND c.date::date = CURRENT_DATE
@@ -958,6 +971,74 @@ app.post('/api/shop-balances/bulk', authenticateToken, async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// --- APP UPDATES ENDPOINTS ---
+
+app.get('/api/app-version', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM app_versions');
+    const response = {
+      android: null,
+      windows: null
+    };
+    result.rows.forEach(row => {
+      if (row.platform === 'android' || row.platform === 'windows') {
+        response[row.platform] = {
+          version: row.version,
+          url: row.url,
+          forceUpdate: row.force_update,
+          releaseNotes: row.release_notes
+        };
+      }
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/app-version/publish', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+  const { platform, version, url, forceUpdate, releaseNotes } = req.body;
+  if (!platform || !version || !url) return res.status(400).json({ message: 'Missing required fields' });
+  
+  try {
+    await db.query(`
+      INSERT INTO app_versions (platform, version, url, force_update, release_notes, updated_at)
+      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      ON CONFLICT (platform) DO UPDATE SET 
+        version = EXCLUDED.version, 
+        url = EXCLUDED.url, 
+        force_update = EXCLUDED.force_update, 
+        release_notes = EXCLUDED.release_notes,
+        updated_at = CURRENT_TIMESTAMP
+    `, [platform, version, url, forceUpdate || false, releaseNotes || '']);
+    
+    res.json({ message: 'Version updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const binaryStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'D:/Projects/Collection_Logger/backend/downloads';
+    const fs = require('fs');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, file.originalname);
+  }
+});
+const binaryUpload = multer({ storage: binaryStorage });
+
+app.post('/api/app-version/upload-binary', authenticateToken, binaryUpload.single('file'), (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+  
+  res.json({ url: `/downloads/${req.file.filename}` });
 });
 
 // --- HEALTH CHECK ---

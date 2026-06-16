@@ -13,6 +13,7 @@ class CollectionProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
 
   double _todayTotal = 0;
+  int _todayCount = 0;
   Map<String, double> _modeBreakdown = {
     'Cash': 0,
     'UPI': 0,
@@ -22,6 +23,7 @@ class CollectionProvider with ChangeNotifier {
   Map<String, int> _collectionFinNumbers = {};
 
   double get todayTotal => _todayTotal;
+  int get todayCount => _todayCount;
   Map<String, double> get modeBreakdown => _modeBreakdown;
   Map<String, int> get shopFinCounts => _shopFinCounts;
   Map<String, int> get collectionFinNumbers => _collectionFinNumbers;
@@ -33,6 +35,7 @@ class CollectionProvider with ChangeNotifier {
     });
 
     _todayTotal = result.todayTotal;
+    _todayCount = result.todayCount;
     _modeBreakdown = result.modeBreakdown;
     _shopFinCounts = result.shopFinCounts;
     _collectionFinNumbers = result.collectionFinNumbers;
@@ -43,6 +46,7 @@ class CollectionProvider with ChangeNotifier {
     final DateTime today = params['today'];
     
     double total = 0;
+    int count = 0;
     double cash = 0;
     double upi = 0;
     double cheque = 0;
@@ -57,6 +61,7 @@ class CollectionProvider with ChangeNotifier {
           c.date.month == today.month && 
           c.date.day == today.day) {
         total += c.amount;
+        count++;
         if (c.paymentMode == PaymentMode.cash) cash += c.amount;
         else if (c.paymentMode == PaymentMode.upi) upi += c.amount;
         else if (c.paymentMode == PaymentMode.cheque) cheque += c.amount;
@@ -89,6 +94,7 @@ class CollectionProvider with ChangeNotifier {
 
     return CalculationResult(
       todayTotal: total,
+      todayCount: count,
       modeBreakdown: {'Cash': cash, 'UPI': upi, 'Cheque': cheque},
       shopFinCounts: finCounts,
       collectionFinNumbers: finNumbers,
@@ -238,11 +244,13 @@ class CollectionProvider with ChangeNotifier {
 
 class CalculationResult {
   final double todayTotal;
+  final int todayCount;
   final Map<String, double> modeBreakdown;
   final Map<String, int> shopFinCounts;
   final Map<String, int> collectionFinNumbers;
   CalculationResult({
     required this.todayTotal, 
+    required this.todayCount,
     required this.modeBreakdown, 
     required this.shopFinCounts,
     required this.collectionFinNumbers,

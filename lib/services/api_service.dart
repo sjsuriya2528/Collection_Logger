@@ -6,7 +6,7 @@ import '../models/collection.dart';
 
 class ApiService {
   // Use this for local testing (Ensure phone and PC are on same Wi-Fi)
-  // static const String baseUrl = 'http://172.26.217.227:3000';
+  // static const String baseUrl = 'http://10.10.243.44:3000';
   
   // Use this for production
   static const String baseUrl = 'https://collection.acmagencies.store';
