@@ -153,7 +153,7 @@ const deleteCloudinaryFile = async (urlStr) => {
 // Multer Config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadPath = 'D:/Projects/Collection_Logger/backend/uploads';
+    const uploadPath = path.join(__dirname, 'uploads');
     if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },
@@ -185,8 +185,8 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => res.send('ACM Collection Logger Backend is running'));
 app.get('/api/auth/signup', (req, res) => res.send('Signup endpoint is alive. Use POST to register.'));
 
-app.use('/uploads', express.static('D:/Projects/Collection_Logger/backend/uploads'));
-app.use('/downloads', express.static('D:/Projects/Collection_Logger/backend/downloads'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
