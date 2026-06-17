@@ -116,6 +116,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
   }
 
   List<dynamic> _cachedFiltered = [];
+  int _outletCount = 0;
   double _totalAmount = 0;
   double _cashTotal = 0;
   double _upiTotal = 0;
@@ -167,9 +168,18 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     double upi = 0;
     double cheque = 0;
     final Map<String, int> finCounts = {};
+    final Set<String> uniqueVisits = {};
 
     for (var c in filtered) {
       final amt = double.tryParse(c['amount'].toString()) ?? 0;
+      final shopName = c['shop_name']?.toString().trim().toLowerCase() ?? '';
+      String dateStr = c['date'].toString();
+      if (!dateStr.contains('Z') && !dateStr.contains('+')) dateStr += 'Z';
+      final localD = DateTime.tryParse(dateStr)?.toLocal() ?? DateTime.now();
+      if (shopName.isNotEmpty) {
+        uniqueVisits.add('${shopName}_${localD.year}_${localD.month}_${localD.day}');
+      }
+      
       final mode = c['payment_mode'].toString().toLowerCase();
       total += amt;
       if (mode == 'cash') cash += amt;
@@ -188,6 +198,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
 
     setState(() {
       _cachedFiltered = filtered;
+      _outletCount = uniqueVisits.length;
       _totalAmount = total;
       _cashTotal = cash;
       _upiTotal = upi;
@@ -322,7 +333,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
             backgroundColor: const Color(0xFF16213E),
             child: Column(
               children: [
-                _buildSummaryHeader(_totalAmount, _cashTotal, _upiTotal, _chequeTotal, _cachedFiltered.length),
+                _buildSummaryHeader(_totalAmount, _cashTotal, _upiTotal, _chequeTotal, _outletCount),
                 if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all')
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),

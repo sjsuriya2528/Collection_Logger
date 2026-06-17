@@ -95,6 +95,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     double upi = 0;
     double cheque = 0;
     final Map<String, List<Collection>> grouped = {};
+    final Set<String> uniqueVisits = {};
 
     for (var c in collProvider.collections) {
       // 1. Filtering
@@ -127,6 +128,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
         filtered.add(c);
         
         // 2. Summary Calculations
+        uniqueVisits.add('${c.shopName.trim().toLowerCase()}_${c.date.year}_${c.date.month}_${c.date.day}');
         total += c.amount;
         if (c.paymentMode == PaymentMode.cash) cash += c.amount;
         else if (c.paymentMode == PaymentMode.upi) upi += c.amount;
@@ -215,7 +217,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
           ),
           
           // Summary Header
-          _buildSummaryHeader(total, cash, upi, cheque, filtered.length),
+          _buildSummaryHeader(total, cash, upi, cheque, uniqueVisits.length),
 
           if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all')
             Padding(
