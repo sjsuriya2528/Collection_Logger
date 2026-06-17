@@ -168,19 +168,19 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
     double upi = 0;
     double cheque = 0;
     final Map<String, int> finCounts = {};
-    final Set<String> uniqueVisits = {};
+    final Map<String, List<dynamic>> tempGrouped = {};
 
     for (var c in filtered) {
       final amt = double.tryParse(c['amount'].toString()) ?? 0;
-      final shopName = c['shop_name']?.toString().trim().toLowerCase() ?? '';
-      String dateStr = c['date'].toString();
-      if (!dateStr.contains('Z') && !dateStr.contains('+')) dateStr += 'Z';
-      final localD = DateTime.tryParse(dateStr)?.toLocal() ?? DateTime.now();
-      if (shopName.isNotEmpty) {
-        uniqueVisits.add('${shopName}_${localD.year}_${localD.month}_${localD.day}');
-      }
-      
       final mode = c['payment_mode'].toString().toLowerCase();
+      
+      final gId = c['group_id']?.toString();
+      final dateStr = c['date'].toString();
+      final key = (gId != null && gId.isNotEmpty) 
+        ? gId 
+        : "${c['shop_name']}_$dateStr";
+      if (!tempGrouped.containsKey(key)) tempGrouped[key] = [];
+      tempGrouped[key]!.add(c);
       total += amt;
       if (mode == 'cash') cash += amt;
       else if (mode == 'upi') upi += amt;
@@ -198,7 +198,7 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
 
     setState(() {
       _cachedFiltered = filtered;
-      _outletCount = uniqueVisits.length;
+      _outletCount = tempGrouped.length;
       _totalAmount = total;
       _cashTotal = cash;
       _upiTotal = upi;
@@ -1174,8 +1174,13 @@ class _EmployeeHistoryScreenState extends State<EmployeeHistoryScreen> {
                         children: [
                           const Text('Total Collection', style: TextStyle(color: Colors.white60, fontSize: 12)),
                           Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text('No of Outlets: $count', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                          if (_startDate != null && _endDate != null && 
+                              _startDate!.year == DateTime.now().year && _startDate!.month == DateTime.now().month && _startDate!.day == DateTime.now().day &&
+                              _endDate!.year == DateTime.now().year && _endDate!.month == DateTime.now().month && _endDate!.day == DateTime.now().day &&
+                              _selectedMode == 'all' && _selectedStatusFilter == 'all') ...[
+                            const SizedBox(height: 4),
+                            Text('No of Outlets: $count', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                          ],
                         ],
                       ),
                       const Icon(Icons.account_balance_wallet_rounded, color: Colors.cyanAccent, size: 32),

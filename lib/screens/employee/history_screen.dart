@@ -95,7 +95,6 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
     double upi = 0;
     double cheque = 0;
     final Map<String, List<Collection>> grouped = {};
-    final Set<String> uniqueVisits = {};
 
     for (var c in collProvider.collections) {
       // 1. Filtering
@@ -128,7 +127,6 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
         filtered.add(c);
         
         // 2. Summary Calculations
-        uniqueVisits.add('${c.shopName.trim().toLowerCase()}_${c.date.year}_${c.date.month}_${c.date.day}');
         total += c.amount;
         if (c.paymentMode == PaymentMode.cash) cash += c.amount;
         else if (c.paymentMode == PaymentMode.upi) upi += c.amount;
@@ -217,7 +215,7 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
           ),
           
           // Summary Header
-          _buildSummaryHeader(total, cash, upi, cheque, uniqueVisits.length),
+          _buildSummaryHeader(total, cash, upi, cheque, groupIds.length),
 
           if (_startDate != null || _selectedMode != 'all' || _selectedStatusFilter != 'all')
             Padding(
@@ -886,8 +884,13 @@ class _CollectionHistoryScreenState extends State<CollectionHistoryScreen> {
                         children: [
                           const Text('Total Collection', style: TextStyle(color: Colors.white60, fontSize: 12)),
                           Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text('No of Outlets: $count', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                          if (_startDate != null && _endDate != null && 
+                              _startDate!.year == DateTime.now().year && _startDate!.month == DateTime.now().month && _startDate!.day == DateTime.now().day &&
+                              _endDate!.year == DateTime.now().year && _endDate!.month == DateTime.now().month && _endDate!.day == DateTime.now().day &&
+                              _selectedMode == 'all' && _selectedStatusFilter == 'all') ...[
+                            const SizedBox(height: 4),
+                            Text('No of Outlets: $count', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                          ],
                         ],
                       ),
                       const Icon(Icons.account_balance_wallet_rounded, color: Colors.cyanAccent, size: 32),

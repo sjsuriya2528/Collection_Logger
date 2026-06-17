@@ -53,7 +53,7 @@ class CollectionProvider with ChangeNotifier {
     final Map<String, int> finCounts = {};
     final Map<String, int> finNumbers = {};
 
-    final Set<String> todayShops = {};
+    final Set<String> todayGroups = {};
 
     // Sort ascending by date to assign sequential FINs
     final sortedColls = List<Collection>.from(colls)..sort((a, b) => a.date.compareTo(b.date));
@@ -63,7 +63,8 @@ class CollectionProvider with ChangeNotifier {
           c.date.month == today.month && 
           c.date.day == today.day) {
         total += c.amount;
-        todayShops.add(c.shopName.trim().toLowerCase());
+        final gKey = (c.groupId != null && c.groupId!.isNotEmpty) ? c.groupId! : c.id;
+        todayGroups.add(gKey);
         if (c.paymentMode == PaymentMode.cash) cash += c.amount;
         else if (c.paymentMode == PaymentMode.upi) upi += c.amount;
         else if (c.paymentMode == PaymentMode.cheque) cheque += c.amount;
@@ -96,7 +97,7 @@ class CollectionProvider with ChangeNotifier {
 
     return CalculationResult(
       todayTotal: total,
-      todayCount: todayShops.length,
+      todayCount: todayGroups.length,
       modeBreakdown: {'Cash': cash, 'UPI': upi, 'Cheque': cheque},
       shopFinCounts: finCounts,
       collectionFinNumbers: finNumbers,

@@ -680,7 +680,7 @@ app.get('/api/employees', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
   try {
     const result = await db.query(`
-      SELECT u.id as user_id, u.name, COALESCE(SUM(c.amount), 0) as today_total, COUNT(DISTINCT c.shop_name) as today_count
+      SELECT u.id as user_id, u.name, COALESCE(SUM(c.amount), 0) as today_total, COUNT(DISTINCT COALESCE(NULLIF(c.group_id, ''), c.id::text)) as today_count
       FROM users u
       LEFT JOIN collections c ON u.id = c.employee_id 
         AND c.date::date = CURRENT_DATE
