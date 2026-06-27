@@ -96,11 +96,28 @@ const sendAdminNotification = async (title, body) => {
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`[FCM] Sent to Google: ${response.successCount} success, ${response.failureCount} failure`);
     if (response.failureCount > 0) {
+      const failedTokens = [];
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
           console.error(`[FCM] Token ${idx} failed: ${resp.error.message}`);
+          if (
+            resp.error.code === 'messaging/invalid-registration-token' ||
+            resp.error.code === 'messaging/registration-token-not-registered' ||
+            (resp.error.message && resp.error.message.includes('Requested entity was not found'))
+          ) {
+            failedTokens.push(tokens[idx]);
+          }
         }
       });
+
+      if (failedTokens.length > 0) {
+        try {
+          await db.query('DELETE FROM fcm_tokens WHERE token = ANY($1::text[])', [failedTokens]);
+          console.log(`[FCM] Cleaned up ${failedTokens.length} invalid tokens from the database.`);
+        } catch (dbErr) {
+          console.error('[FCM] Error cleaning up invalid tokens:', dbErr);
+        }
+      }
     }
   } catch (err) {
     console.error('Error sending push notification:', err);
