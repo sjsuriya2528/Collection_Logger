@@ -570,18 +570,22 @@ app.post('/api/collections', authenticateToken, upload.fields([
   let billProofUrl = req.body.bill_proof ?? req.body.billProof ?? null;
   let paymentProofUrl = req.body.payment_proof ?? req.body.paymentProof ?? null;
 
-  if (req.files && req.files['billProof']) {
-    const urls = [];
-    for (const file of req.files['billProof']) {
-      const url = await uploadToCloudinary(file.path, 'bills');
-      if (url) urls.push(url);
+  try {
+    if (req.files && req.files['billProof']) {
+      const urls = [];
+      for (const file of req.files['billProof']) {
+        const url = await uploadToCloudinary(file.path, 'bills');
+        if (url) urls.push(url);
+      }
+      if (urls.length > 0) {
+        billProofUrl = billProofUrl ? `${billProofUrl},${urls.join(',')}` : urls.join(',');
+      }
     }
-    if (urls.length > 0) {
-      billProofUrl = billProofUrl ? `${billProofUrl},${urls.join(',')}` : urls.join(',');
+    if (req.files && req.files['paymentProof']) {
+      paymentProofUrl = await uploadToCloudinary(req.files['paymentProof'][0].path, 'payments');
     }
-  }
-  if (req.files && req.files['paymentProof']) {
-    paymentProofUrl = await uploadToCloudinary(req.files['paymentProof'][0].path, 'payments');
+  } catch (err) {
+    return res.status(500).json({ error: 'Image upload failed: ' + err.message });
   }
 
   try {
@@ -831,18 +835,22 @@ app.put('/api/collections/:id', authenticateToken, upload.fields([
       paymentProofUrl = ownerCheck.rows[0].payment_proof;
     }
 
-    if (req.files && req.files['bill_proof']) {
-      const urls = [];
-      for (const file of req.files['bill_proof']) {
-        const url = await uploadToCloudinary(file.path, 'bills');
-        if (url) urls.push(url);
+    try {
+      if (req.files && req.files['bill_proof']) {
+        const urls = [];
+        for (const file of req.files['bill_proof']) {
+          const url = await uploadToCloudinary(file.path, 'bills');
+          if (url) urls.push(url);
+        }
+        if (urls.length > 0) {
+          billProofUrl = billProofUrl ? `${billProofUrl},${urls.join(',')}` : urls.join(',');
+        }
       }
-      if (urls.length > 0) {
-        billProofUrl = billProofUrl ? `${billProofUrl},${urls.join(',')}` : urls.join(',');
+      if (req.files && req.files['payment_proof']) {
+        paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path, 'payments');
       }
-    }
-    if (req.files && req.files['payment_proof']) {
-      paymentProofUrl = await uploadToCloudinary(req.files['payment_proof'][0].path, 'payments');
+    } catch (err) {
+      return res.status(500).json({ error: 'Image upload failed: ' + err.message });
     }
 
     // Remove restrictions that were wiping proofs based on status/mode
