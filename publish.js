@@ -50,7 +50,14 @@ async function publish() {
     console.log(`\nUpdating pubspec.yaml to version ${version}...`);
     const pubspecPath = path.join(__dirname, 'pubspec.yaml');
     let pubspecContent = fs.readFileSync(pubspecPath, 'utf8');
-    pubspecContent = pubspecContent.replace(/version:\s+\d+\.\d+\.\d+(\+\d+)?/, `version: ${version}+1`);
+    
+    let currentBuildNumber = 1;
+    const versionMatch = pubspecContent.match(/version:\s+\d+\.\d+\.\d+\+(\d+)/);
+    if (versionMatch) {
+      currentBuildNumber = parseInt(versionMatch[1], 10) + 1;
+    }
+    
+    pubspecContent = pubspecContent.replace(/version:\s+\d+\.\d+\.\d+(\+\d+)?/, `version: ${version}+${currentBuildNumber}`);
     fs.writeFileSync(pubspecPath, pubspecContent);
 
     // 2. Build the app
