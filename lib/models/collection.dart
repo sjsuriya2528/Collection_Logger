@@ -18,7 +18,7 @@ class Collection {
   final double upiAmount;
   final String? groupId;
 
-  List<String> get billProofsList => billProof?.split(',').where((e) => e.trim().isNotEmpty).toList() ?? [];
+  List<String> get billProofsList => billProof?.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList() ?? [];
 
   Collection({
     String? id,

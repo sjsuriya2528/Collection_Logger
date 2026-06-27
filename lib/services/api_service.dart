@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import '../models/user.dart';
@@ -82,7 +83,11 @@ class ApiService {
         if (proof.startsWith('http') || proof.startsWith('/uploads')) {
           urls.add(proof);
         } else {
-          request.files.add(await http.MultipartFile.fromPath('billProof', proof));
+          if (File(proof).existsSync()) {
+            request.files.add(await http.MultipartFile.fromPath('billProof', proof));
+          } else {
+            print('Bill proof file not found, skipping: $proof');
+          }
         }
       }
       if (urls.isNotEmpty) request.fields['bill_proof'] = urls.join(',');
@@ -94,7 +99,11 @@ class ApiService {
       if (collection.paymentProof!.startsWith('http') || collection.paymentProof!.startsWith('/uploads')) {
         request.fields['payment_proof'] = collection.paymentProof!;
       } else {
-        request.files.add(await http.MultipartFile.fromPath('payment_proof', collection.paymentProof!));
+        if (File(collection.paymentProof!).existsSync()) {
+          request.files.add(await http.MultipartFile.fromPath('paymentProof', collection.paymentProof!));
+        } else {
+          print('Payment proof file not found, skipping: ${collection.paymentProof}');
+        }
       }
     } else {
       request.fields['payment_proof'] = '';
@@ -273,7 +282,7 @@ class ApiService {
     if (billProofPath != null) {
       List<String> urls = [];
       if (billProofPath.trim().isNotEmpty) {
-        for (final proof in billProofPath.split(',').where((e) => e.trim().isNotEmpty)) {
+        for (final proof in billProofPath.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty)) {
           if (proof.startsWith('http') || proof.startsWith('/uploads')) {
             urls.add(proof);
           } else {
